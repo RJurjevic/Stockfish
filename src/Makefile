@@ -121,6 +121,7 @@ else
    SUPPORTED_ARCH=false
 endif
 
+flipped = no
 blas = no
 optimize = yes
 debug = no
@@ -469,6 +470,10 @@ ifneq ($(comp),mingw)
 		endif
 	endif
 endif
+endif
+
+ifeq ($(flipped), yes)
+        CXXFLAGS += -DFLIPPED
 endif
 
 ### 3.2.1. BLAS libraries

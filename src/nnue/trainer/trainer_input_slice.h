@@ -1,4 +1,4 @@
-﻿#ifndef _NNUE_TRAINER_INPUT_SLICE_H_
+#ifndef _NNUE_TRAINER_INPUT_SLICE_H_
 #define _NNUE_TRAINER_INPUT_SLICE_H_
 
 #include "trainer.h"
@@ -323,9 +323,9 @@ namespace Eval::NNUE {
                 const IndexType output_offset = kOutputDimensions * b;
 
                 IndexType i = 0;
-                for (; i < Offset; ++i) {
+                /*for (; i < Offset; ++i) {
                     gradients_[input_offset + i] = static_cast<LearnFloatType>(0.0);
-                }
+                }*/
 
                 for (; i < Offset + kOutputDimensions; ++i) {
                     gradients_[input_offset + i] = gradients[output_offset + i - Offset];

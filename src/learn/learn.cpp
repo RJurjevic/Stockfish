@@ -1,20 +1,20 @@
-﻿// Learning routines:
+// Learning routines:
 //
 // 1) Automatic generation of game records in .bin format
-// → "gensfen" command
+// ? "gensfen" command
 //
 // 2) Learning evaluation function parameters from the generated .bin files
-// → "learn" command
+// ? "learn" command
 //
-// → Shuffle in the teacher phase is also an extension of this command.
+// ? Shuffle in the teacher phase is also an extension of this command.
 // Example) "learn shuffle"
 //
 // 3) Automatic generation of fixed traces
-// → "makebook think" command
-// → implemented in extra/book/book.cpp
+// ? "makebook think" command
+// ? implemented in extra/book/book.cpp
 //
 // 4) Post-station automatic review mode
-// → I will not be involved in the engine because it is a problem that the GUI should assist.
+// ? I will not be involved in the engine because it is a problem that the GUI should assist.
 // etc..
 
 #include "learn.h"
@@ -864,7 +864,7 @@ namespace Learner
              << ", epoch " << epoch
              << endl;
 
-        out << "  - learning rate = " << params.learning_rate << endl;
+        out << "  - learning rate    = " << params.learning_rate << endl;
 
         // For calculation of verification data loss
         Loss test_loss_sum{};
@@ -881,7 +881,7 @@ namespace Learner
             auto& pos = th.rootPos;
             StateInfo si;
             pos.set(StartFEN, false, &si, &th);
-            out << "  - startpos eval = " << Eval::evaluate(pos) << endl;
+            out << "  - startpos eval    = " << Eval::evaluate(pos) << endl;
         });
         mainThread->wait_for_worker_finished();
 
@@ -904,15 +904,15 @@ namespace Learner
 
         if (psv.size() && test_loss_sum.count() > 0)
         {
-            test_loss_sum.print_only_loss("val", out);
+            test_loss_sum.print_only_loss("valid", out);
 
             if (learn_loss_sum.count() > 0)
             {
                 learn_loss_sum.print_with_grad("train", out);
             }
 
-            out << "  - norm = " << sum_norm << endl;
-            out << "  - move accuracy = " << (move_accord_count * 100.0 / psv.size()) << "%" << endl;
+            out << "  - norm             = " << sum_norm << endl;
+            out << "  - move accuracy    = " << (move_accord_count * 100.0 / psv.size()) << "%" << endl;
         }
         else
         {

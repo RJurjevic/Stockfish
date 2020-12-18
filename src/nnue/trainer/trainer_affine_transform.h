@@ -1,4 +1,4 @@
-﻿#ifndef _NNUE_TRAINER_AFFINE_TRANSFORM_H_
+#ifndef _NNUE_TRAINER_AFFINE_TRANSFORM_H_
 #define _NNUE_TRAINER_AFFINE_TRANSFORM_H_
 
 #include "trainer.h"

@@ -1,4 +1,4 @@
-﻿#include "half_relative_kp.h"
+#include "half_relative_kp.h"
 #include "index_list.h"
 
 //Definition of input features HalfRelativeKP of NNUE evaluation function
@@ -8,7 +8,11 @@ namespace Eval::NNUE::Features {
     // this has to stay until we find a better arch that works with "flip".
     // allows us to use current master net for gensfen (primarily needed for higher quality data)
     inline Square orient(Color perspective, Square s) {
+#if defined(FLIPPED)
+        return Square(int(s) ^ (bool(perspective) * 56));
+#else
         return Square(int(s) ^ (bool(perspective) * 63));
+#endif
     }
 
     // Find the index of the feature quantity from the ball position and PieceSquare
@@ -57,7 +61,7 @@ namespace Eval::NNUE::Features {
         }
     }
 
-    // Get a list of indices whose values ​​have changed from the previous one in the feature quantity
+    // Get a list of indices whose values ??have changed from the previous one in the feature quantity
     template <Side AssociatedKing>
     void HalfRelativeKP<AssociatedKing>::append_changed_indices(
         const Position& pos,
