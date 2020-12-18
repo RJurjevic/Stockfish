@@ -1,5 +1,6 @@
-.o
-.nnue
-.lto_wrapper_args
-.ltrans.out
-.exe
+*.o
+*.res
+*.nnue
+*.lto_wrapper_args
+*.ltrans.out
+*.exe
