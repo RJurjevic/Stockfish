@@ -459,26 +459,6 @@ namespace Eval::NNUE {
 
 #endif
 
-            // dampen the running average
-            constexpr double dampening = 0.99;
-            total_gradients_ *= dampening;
-            for (auto& g : acc_gradients_by_feature_)
-                g *= dampening;
-
-            struct alignas(kCacheLineSize) A
-            {
-                A(double v) :
-                    val(v)
-                {
-                }
-
-                double val;
-            };
-            std::vector<A, CacheLineAlignedAllocator<A>> total_gradients_change;
-            std::vector<double, CacheLineAlignedAllocator<double>> acc_gradients_by_feature_change;
-            total_gradients_change.resize(thread_pool.size(), 0.0);
-            acc_gradients_by_feature_change.resize(Features::Factorizer<RawFeatures>::get_dimensions(), 0.0);
-
             thread_pool.execute_with_workers(
                 [&, num_threads = thread_pool.size()](Thread& th) {
                     const auto thread_index = th.thread_idx();
@@ -535,9 +515,6 @@ namespace Eval::NNUE {
                                     effective_learning_rate * feature.get_count())
                                     / std::sqrt(0.01 + overobservation);
 
-                                acc_gradients_by_feature_change[feature_index] += scale * grad_norm;
-                                total_gradients_change[thread_index].val += scale * grad_norm;
-
 #if defined (USE_BLAS)
 
                                 cblas_saxpy(
@@ -562,15 +539,6 @@ namespace Eval::NNUE {
             );
 
             thread_pool.wait_for_workers_finished();
-
-            for (IndexType i = 0; i < Features::Factorizer<RawFeatures>::get_dimensions(); ++i)
-            {
-                acc_gradients_by_feature_[i] += acc_gradients_by_feature_change[i];
-            }
-            for (auto [v] : total_gradients_change)
-            {
-                total_gradients_ += v;
-            }
         }
 
     private:
