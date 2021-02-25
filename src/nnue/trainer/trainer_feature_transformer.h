@@ -459,26 +459,6 @@ namespace Eval::NNUE {
 
 #endif
 
-            // dampen the running average
-            constexpr double dampening = 0.99;
-            total_gradients_ *= dampening;
-            for (auto& g : acc_gradients_by_feature_)
-                g *= dampening;
-
-            struct alignas(kCacheLineSize) A
-            {
-                A(double v) :
-                    val(v)
-                {
-                }
-
-                double val;
-            };
-            std::vector<A, CacheLineAlignedAllocator<A>> total_gradients_change;
-            std::vector<double, CacheLineAlignedAllocator<double>> acc_gradients_by_feature_change;
-            total_gradients_change.resize(thread_pool.size(), 0.0);
-            acc_gradients_by_feature_change.resize(Features::Factorizer<RawFeatures>::get_dimensions(), 0.0);
-
             thread_pool.execute_with_workers(
                 [&, num_threads = thread_pool.size()](Thread& th) {
                     const auto thread_index = th.thread_idx();
