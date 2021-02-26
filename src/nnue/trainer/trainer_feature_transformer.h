@@ -474,9 +474,6 @@ namespace Eval::NNUE {
                                 auto g = gradients_[output_offset + i];
                                 grad_norm += g * g;
                             }
-                            const double feature_prob =
-                                (double)RawFeatures::kMaxActiveDimensions
-                                / RawFeatures::kDimensions;
 
                             for (const auto& feature : batch_[b].training_features[c]) {
                                 const IndexType feature_index = feature.get_index();
@@ -501,19 +498,8 @@ namespace Eval::NNUE {
                                 // (even a different cache line)
                                 observed_features.set(feature_index);
 
-                                const double f =
-                                    (0.00001 * feature_prob + acc_gradients_by_feature_[feature_index])
-                                    / (0.00001 + total_gradients_);
-
-                                const double overobservation =
-                                    f / feature_prob;
-
-                                // The addition of 0.01 effectively makes the maximum
-                                // LR scaling factor be 10x, which is achieved for
-                                // unobserved features.
                                 const auto scale = static_cast<LearnFloatType>(
-                                    effective_learning_rate * feature.get_count())
-                                    / std::sqrt(0.01 + overobservation);
+                                    effective_learning_rate / feature.get_count());
 
 #if defined (USE_BLAS)
 
