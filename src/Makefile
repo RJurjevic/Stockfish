@@ -121,6 +121,7 @@ else
    SUPPORTED_ARCH=false
 endif
 
+perturb = no
 flipped = no
 blas = no
 optimize = yes
@@ -470,6 +471,10 @@ ifneq ($(comp),mingw)
 		endif
 	endif
 endif
+endif
+
+ifeq ($(perturb), yes)
+        CXXFLAGS += -DPERTURBATION
 endif
 
 ifeq ($(flipped), yes)

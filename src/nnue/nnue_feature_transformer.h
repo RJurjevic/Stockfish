@@ -143,6 +143,25 @@ namespace Eval::NNUE {
         biases_[i] = read_little_endian<BiasType>(stream);
       for (std::size_t i = 0; i < kHalfDimensions * kInputDimensions; ++i)
         weights_[i] = read_little_endian<WeightType>(stream);
+
+#if defined(PERTURBATION)
+      srand (time(NULL));
+      for (std::size_t i = 0; i < kHalfDimensions; ++i) {
+        double f = (double)rand() / RAND_MAX;
+        const double k = 0.01 / kHalfDimensions;
+        double k1 = std::max(0.0, biases_[i] - k);
+        double k2 = std::min(1.0, biases_[i] + k);
+		biases_[i] = k1 + f * (k2 - k1);
+      }
+      for (std::size_t i = 0; i < kHalfDimensions * kInputDimensions; ++i) {
+        double f = (double)rand() / RAND_MAX;
+        const double k = 0.01 / kHalfDimensions;
+        double k1 = std::max(0.0, weights_[i] - k);
+        double k2 = std::min(1.0, weights_[i] + k);
+		weights_[i] = k1 + f * (k2 - k1);
+      }
+#endif
+
       return !stream.fail();
     }
 
