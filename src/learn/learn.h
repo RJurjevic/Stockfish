@@ -1,4 +1,4 @@
-﻿#ifndef _LEARN_H_
+#ifndef _LEARN_H_
 #define _LEARN_H_
 
 // ----------------------
@@ -128,14 +128,14 @@ namespace Learner
         template <typename StreamT>
         void print_with_grad(const std::string& prefix, StreamT& s) const
         {
-            s << "  - " << prefix << "_loss       = " << m_loss.value / (double)m_count << std::endl;
-            s << "  - " << prefix << "_grad_norm  = " << m_loss.grad / (double)m_count << std::endl;
+            s << "  - " << prefix << " loss             = " << m_loss.value / (double)m_count << std::endl;
+            s << "  - " << prefix << " grad norm        = " << m_loss.grad / (double)m_count << std::endl;
         }
 
         template <typename StreamT>
         void print_only_loss(const std::string& prefix, StreamT& s) const
         {
-            s << "  - " << prefix << "_loss       = " << m_loss.value / (double)m_count << std::endl;
+            s << "  - " << prefix << " loss             = " << m_loss.value / (double)m_count << std::endl;
         }
 
     private:

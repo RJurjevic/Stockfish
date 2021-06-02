@@ -517,6 +517,7 @@ namespace Learner
             bool smart_fen_skipping = false;
 
             double learning_rate = 1.0;
+            double learning_rate_min = 0.0;
             double max_grad = 1.0;
 
             string validation_set_file_name;
@@ -577,7 +578,6 @@ namespace Learner
             latest_loss_count = 0;
             total_done = 0;
             trials = params.newbob_num_trials;
-            dir_number = 0;
         }
 
         void learn(uint64_t epochs);
@@ -605,7 +605,7 @@ namespace Learner
         bool check_progress();
 
         // save merit function parameters to a file
-        bool save(bool is_final = false);
+        bool save(uint64_t epoch, bool is_final = false);
 
         Params params;
 
@@ -627,7 +627,6 @@ namespace Learner
         uint64_t latest_loss_count;
 
         int trials;
-        int dir_number;
 
         // For calculation of learning data loss
         Loss learn_loss_sum;
@@ -722,7 +721,7 @@ namespace Learner
 
         Eval::NNUE::finalize_net();
 
-        save(true);
+        save(0, true);
     }
 
     void LearnerThink::learn_worker(Thread& th, std::atomic<uint64_t>& counter, uint64_t limit)
@@ -831,7 +830,7 @@ namespace Learner
         {
             save_count = 0;
 
-            const bool converged = save();
+            const bool converged = save(epoch);
             if (converged)
             {
                 stop_flag = true;
@@ -864,7 +863,8 @@ namespace Learner
              << ", epoch " << epoch
              << endl;
 
-        out << "  - learning rate    = " << params.learning_rate << endl;
+        out << "  - learning rate          = " << params.learning_rate << endl;
+        out << "  - learning rate min      = " << params.learning_rate_min << endl;
 
         // For calculation of verification data loss
         Loss test_loss_sum{};
@@ -881,7 +881,7 @@ namespace Learner
             auto& pos = th.rootPos;
             StateInfo si;
             pos.set(StartFEN, false, &si, &th);
-            out << "  - startpos eval    = " << Eval::evaluate(pos) << endl;
+            out << "  - startpos eval          = " << Eval::evaluate(pos) << endl;
         });
         mainThread->wait_for_worker_finished();
 
@@ -911,8 +911,8 @@ namespace Learner
                 learn_loss_sum.print_with_grad("train", out);
             }
 
-            out << "  - norm             = " << sum_norm << endl;
-            out << "  - move accuracy    = " << (move_accord_count * 100.0 / psv.size()) << "%" << endl;
+            out << "  - norm                   = " << sum_norm << endl;
+            out << "  - move accuracy          = " << (move_accord_count * 100.0 / psv.size()) << "%" << endl;
         }
         else
         {
@@ -1014,10 +1014,10 @@ namespace Learner
 
             out
                 << "  - reducing learning rate from " << params.learning_rate
-                << " to " << (params.learning_rate * params.newbob_decay)
+                << " to " << (std::max(params.learning_rate * params.newbob_decay, params.learning_rate_min))
                 << " (" << trials << " more trials)" << endl;
 
-            params.learning_rate *= params.newbob_decay;
+            params.learning_rate = std::max(params.learning_rate * params.newbob_decay, params.learning_rate_min);
         };
 
         auto accept = [&]() {
@@ -1071,7 +1071,7 @@ namespace Learner
     }
 
     // Write evaluation function file.
-    bool LearnerThink::save(bool is_final)
+    bool LearnerThink::save(uint64_t epoch, bool is_final)
     {
         // Each time you save, change the extension part of the file name like "0","1","2",..
         // (Because I want to compare the winning rate for each evaluation function parameter later)
@@ -1091,8 +1091,7 @@ namespace Learner
         }
         else
         {
-            // TODO: consider naming the output directory by epoch.
-            const std::string dir_name = std::to_string(dir_number++);
+            const std::string dir_name = std::to_string(epoch);
             Eval::NNUE::save_eval(dir_name);
 
             if (params.newbob_decay != 1.0 && latest_loss_count > 0)
@@ -1158,6 +1157,7 @@ namespace Learner
 
             // learning rate
             else if (option == "lr") is >> params.learning_rate;
+            else if (option == "lr_min") is >> params.learning_rate_min;
             else if (option == "max_grad") is >> params.max_grad;
 
             // Accept also the old option name.
@@ -1262,40 +1262,41 @@ namespace Learner
 
         out << "  - epochs                   : " << epochs << endl;
         out << "  - epochs * minibatch size  : " << epochs * params.mini_batch_size << endl;
-        out << "  - eval_limit               : " << params.eval_limit << endl;
-        out << "  - save_only_once           : " << (params.save_only_once ? "true" : "false") << endl;
+        out << "  - eval limit               : " << params.eval_limit << endl;
+        out << "  - save only once           : " << (params.save_only_once ? "true" : "false") << endl;
         out << "  - shuffle on read          : " << (params.shuffle ? "true" : "false") << endl;
 
         out << "  - Loss Function            : " << LOSS_FUNCTION << endl;
         out << "  - minibatch size           : " << params.mini_batch_size << endl;
 
-        out << "  - nn_batch_size            : " << nn_batch_size << endl;
-        out << "  - nn_options               : " << nn_options << endl;
+        out << "  - nn batch size            : " << nn_batch_size << endl;
+        out << "  - nn options               : " << nn_options << endl;
 
         out << "  - learning rate            : " << params.learning_rate << endl;
-        out << "  - max_grad                 : " << params.max_grad << endl;
+        out << "  - learning rate min        : " << params.learning_rate_min << endl;
+        out << "  - max grad                 : " << params.max_grad << endl;
         out << "  - use draws in training    : " << params.use_draw_games_in_training << endl;
         out << "  - use draws in validation  : " << params.use_draw_games_in_validation << endl;
         out << "  - skip repeated positions  : " << params.skip_duplicated_positions_in_training << endl;
 
         out << "  - winning prob coeff       : " << winning_probability_coefficient << endl;
-        out << "  - use_wdl                  : " << use_wdl << endl;
+        out << "  - use wdl                  : " << use_wdl << endl;
 
-        out << "  - src_score_min_value      : " << src_score_min_value << endl;
-        out << "  - src_score_max_value      : " << src_score_max_value << endl;
-        out << "  - dest_score_min_value     : " << dest_score_min_value << endl;
-        out << "  - dest_score_max_value     : " << dest_score_max_value << endl;
+        out << "  - src score min value      : " << src_score_min_value << endl;
+        out << "  - src score max value      : " << src_score_max_value << endl;
+        out << "  - dest score min value     : " << dest_score_min_value << endl;
+        out << "  - dest score max value     : " << dest_score_max_value << endl;
 
-        out << "  - reduction_gameply        : " << params.reduction_gameply << endl;
+        out << "  - reduction gameply        : " << params.reduction_gameply << endl;
 
-        out << "  - elmo_lambda_low          : " << elmo_lambda_low << endl;
-        out << "  - elmo_lambda_high         : " << elmo_lambda_high << endl;
-        out << "  - elmo_lambda_limit        : " << elmo_lambda_limit << endl;
-        out << "  - eval_save_interval       : " << params.eval_save_interval << " sfens" << endl;
-        out << "  - loss_output_interval     : " << params.loss_output_interval << " sfens" << endl;
+        out << "  - elmo lambda low          : " << elmo_lambda_low << endl;
+        out << "  - elmo lambda high         : " << elmo_lambda_high << endl;
+        out << "  - elmo lambda limit        : " << elmo_lambda_limit << endl;
+        out << "  - eval save interval       : " << params.eval_save_interval << " sfens" << endl;
+        out << "  - loss output interval     : " << params.loss_output_interval << " sfens" << endl;
 
-        out << "  - sfen_read_size           : " << params.sfen_read_size << endl;
-        out << "  - thread_buffer_size       : " << params.thread_buffer_size << endl;
+        out << "  - sfen read size           : " << params.sfen_read_size << endl;
+        out << "  - thread buffer size       : " << params.thread_buffer_size << endl;
 
         out << "  - seed                     : " << params.seed << endl;
         out << "  - verbose                  : " << (params.verbose ? "true" : "false") << endl;

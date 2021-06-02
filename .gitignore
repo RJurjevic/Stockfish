@@ -4,3 +4,5 @@
 *.lto_wrapper_args
 *.ltrans.out
 *.exe
+run.txt
+temp.txt
