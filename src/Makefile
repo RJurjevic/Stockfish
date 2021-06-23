@@ -123,6 +123,7 @@ endif
 
 perturb = no
 flipped = no
+halphkp512 = no
 blas = no
 optimize = yes
 debug = no
@@ -479,6 +480,11 @@ endif
 
 ifeq ($(flipped), yes)
         CXXFLAGS += -DFLIPPED
+endif
+
+ifeq ($(halphkp512), yes)
+        CXXFLAGS += -DFLIPPED
+        CXXFLAGS += -DHALPHKP512
 endif
 
 ### 3.2.1. BLAS libraries

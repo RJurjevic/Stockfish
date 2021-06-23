@@ -35,7 +35,11 @@ namespace Eval::NNUE {
         Features::HalfKP<Features::Side::kFriend>>;
 
     // Number of input feature dimensions after conversion
+#if defined(HALPHKP512)
+    constexpr IndexType kTransformedFeatureDimensions = 512;
+#else
     constexpr IndexType kTransformedFeatureDimensions = 256;
+#endif
 
     namespace Layers {
 

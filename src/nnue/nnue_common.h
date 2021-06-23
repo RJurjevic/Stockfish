@@ -55,10 +55,14 @@ namespace sys = std::filesystem;
 namespace Eval::NNUE {
 
   // Version of the evaluation file
+#if defined(HALPHKP512)
+  constexpr std::uint32_t kVersion = 0x7af32f30u;
+#else
 #if defined(FLIPPED)
   constexpr std::uint32_t kVersion = 0x7af32f17u;
 #else
   constexpr std::uint32_t kVersion = 0x7AF32F16u;
+#endif
 #endif
 
   // Constant used in evaluation value calculation
