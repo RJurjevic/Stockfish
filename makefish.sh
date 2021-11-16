@@ -14,6 +14,6 @@ make build ARCH=x86-64-avx2 blas=yes flipped=yes
 ##make build ARCH=x86-64-avx2 blas=yes flipped=yes -j
 strip stockfish.exe
 ##mv stockfish.exe ../stockfish-sse41-flipped-2021-06-25.exe
-mv stockfish.exe ../stockfish-avx2-flipped-2021-06-25.exe
+mv stockfish.exe ../stockfish-avx2-flipped-2021-11-16.exe
 make clean
 cd
