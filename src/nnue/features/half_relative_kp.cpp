@@ -8,11 +8,7 @@ namespace Eval::NNUE::Features {
     // this has to stay until we find a better arch that works with "flip".
     // allows us to use current master net for gensfen (primarily needed for higher quality data)
     inline Square orient(Color perspective, Square s) {
-#if defined(FLIPPED)
         return Square(int(s) ^ (bool(perspective) * 56));
-#else
-        return Square(int(s) ^ (bool(perspective) * 63));
-#endif
     }
 
     // Find the index of the feature quantity from the ball position and PieceSquare

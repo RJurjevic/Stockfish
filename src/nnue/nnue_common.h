@@ -55,11 +55,7 @@ namespace sys = std::filesystem;
 namespace Eval::NNUE {
 
   // Version of the evaluation file
-#if defined(FLIPPED)
-  constexpr std::uint32_t kVersion = 0x7af32f17u;
-#else
-  constexpr std::uint32_t kVersion = 0x7AF32F16u;
-#endif
+  constexpr std::uint32_t kVersion = 0x7af32f18u;
 
   // Constant used in evaluation value calculation
   constexpr int FV_SCALE = 16;
