@@ -22,7 +22,11 @@
 #define NNUE_ARCHITECTURE_H_INCLUDED
 
 // Defines the network structure
+#if defined(HALFKA)
+#include "architectures/halfka_256x2-32-32.h"
+#else
 #include "architectures/halfkp_256x2-32-32.h"
+#endif
 
 namespace Eval::NNUE {
 
