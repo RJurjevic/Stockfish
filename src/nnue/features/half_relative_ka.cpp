@@ -1,16 +1,20 @@
-﻿#include "half_relative_ka.h"
+#include "half_relative_ka.h"
 #include "index_list.h"
 
 //Definition of input features HalfRelativeKA of NNUE evaluation function
 namespace Eval::NNUE::Features {
 
     // Orient a square according to perspective (rotate the board 180° for black)
-    // Important note for "halfka": this arch was designed with "flip" in mind 
+    // Important note for "halfka": this arch was designed with "flip" in mind
     // although it still is untested which approach is better.
     // this has to stay until we find a better arch that works with "flip".
     // allows us to use current master net for gensfen (primarily needed for higher quality data)
     inline Square orient(Color perspective, Square s) {
+#if defined(FLIPPED)
+        return Square(int(s) ^ (bool(perspective) * 56));
+#else
         return Square(int(s) ^ (bool(perspective) * 63));
+#endif
     }
 
     // Find the index of the feature quantity from the ball position and PieceSquare
@@ -59,7 +63,7 @@ namespace Eval::NNUE::Features {
         }
     }
 
-    // Get a list of indices whose values ​​have changed from the previous one in the feature quantity
+    // Get a list of indices whose values ??have changed from the previous one in the feature quantity
     template <Side AssociatedKing>
     void HalfRelativeKA<AssociatedKing>::append_changed_indices(
         const Position& pos,
