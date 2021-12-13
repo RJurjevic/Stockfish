@@ -123,7 +123,6 @@ endif
 
 perturb = no
 flipped = no
-halfka = no
 blas = no
 optimize = yes
 debug = no
@@ -480,10 +479,6 @@ endif
 
 ifeq ($(flipped), yes)
         CXXFLAGS += -DFLIPPED
-endif
-
-ifeq ($(halfka), yes)
-        CXXFLAGS += -DHALFKA
 endif
 
 ### 3.2.1. BLAS libraries
