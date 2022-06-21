@@ -122,7 +122,6 @@ else
 endif
 
 perturb = no
-flipped = no
 blas = no
 optimize = yes
 debug = no
@@ -475,10 +474,6 @@ endif
 
 ifeq ($(perturb), yes)
         CXXFLAGS += -DPERTURBATION
-endif
-
-ifeq ($(flipped), yes)
-        CXXFLAGS += -DFLIPPED
 endif
 
 ### 3.2.1. BLAS libraries

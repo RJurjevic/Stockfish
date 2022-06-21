@@ -4,17 +4,9 @@
 //Definition of input features HalfRelativeKA of NNUE evaluation function
 namespace Eval::NNUE::Features {
 
-    // Orient a square according to perspective (rotate the board 180° for black)
-    // Important note for "halfka": this arch was designed with "flip" in mind
-    // although it still is untested which approach is better.
-    // this has to stay until we find a better arch that works with "flip".
-    // allows us to use current master net for gensfen (primarily needed for higher quality data)
+    // Orient a square according to perspective (flip the board for black)
     inline Square orient(Color perspective, Square s) {
-#if defined(FLIPPED)
         return Square(int(s) ^ (bool(perspective) * 56));
-#else
-        return Square(int(s) ^ (bool(perspective) * 63));
-#endif
     }
 
     // Find the index of the feature quantity from the ball position and PieceSquare
