@@ -11,6 +11,6 @@ cd src
 # build Stockfish executable
 make build ARCH=x86-64-avx2 blas=yes
 strip stockfish.exe
-mv stockfish.exe ../stockfish-x86-64-avx2-windows-2022-08-06.exe
+mv stockfish.exe ../stockfish-x86-64-avx2-windows-2022-12-25.exe
 make clean
 cd
