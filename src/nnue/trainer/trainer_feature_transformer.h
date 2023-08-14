@@ -535,7 +535,7 @@ namespace Eval::NNUE {
             target_layer_(target_layer),
             biases_(),
             weights_(),
-            momentum_(0.2),
+            momentum_(0.8),
             learning_rate_scale_(1.0) {
 
             acc_gradients_by_feature_.resize(Features::Factorizer<RawFeatures>::get_dimensions(), 0.0);
