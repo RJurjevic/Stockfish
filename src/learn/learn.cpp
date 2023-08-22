@@ -785,8 +785,15 @@ namespace Learner
                 goto RETRY_READ;
             }
 
-            // We don't need to qsearch when doing smart skipping
-            if (!params.assume_quiet && !params.smart_fen_skipping)
+            if (params.smart_fen_skipping
+                && (pos.capture_or_promotion((Move)ps.move)
+                    || pos.checkers()))
+            {
+                goto RETRY_READ;
+            }
+
+            // We don't need to qsearch when positions are quiet
+            if (!params.assume_quiet)
             {
                 int ply = 0;
                 pos.do_move((Move)ps.move, state[ply++]);
@@ -798,13 +805,6 @@ namespace Learner
                 {
                     pos.do_move(m, state[ply++]);
                 }
-            }
-
-            if (params.smart_fen_skipping
-                && (pos.capture_or_promotion((Move)ps.move)
-                    || pos.checkers()))
-            {
-                goto RETRY_READ;
             }
 
             // We want to position being trained on not to be terminal
