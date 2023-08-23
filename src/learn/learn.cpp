@@ -482,6 +482,9 @@ namespace Learner
             // Mini batch size size. Be sure to set it on the side that uses this class.
             uint64_t mini_batch_size = LEARN_MINI_BATCH_SIZE;
 
+            // NNUE mini batch size
+            uint64_t nn_batch_size = 2000;
+
             // Option to exclude early stage from learning
             int reduction_gameply = 1;
 
@@ -555,7 +558,7 @@ namespace Learner
         // mini-batch size = 1M is standard, so 0.2% of that should be negligible in terms of time.
         // Since search() is performed with depth = 1 in calculation of
         // move match rate, simple comparison is not possible...
-        static constexpr uint64_t sfen_for_mse_size = 2000;
+        uint64_t sfen_for_mse_size = 2000;
 
         LearnerThink(const Params& prm) :
             params(prm),
@@ -664,6 +667,8 @@ namespace Learner
         set_learning_search_limits();
 
         Eval::NNUE::verify_any_net_loaded();
+
+        sfen_for_mse_size = params.nn_batch_size;
 
         const PSVector sfen_for_mse =
             params.validation_set_file_name.empty()
@@ -1116,7 +1121,6 @@ namespace Learner
         string base_dir;
         string target_dir;
 
-        uint64_t nn_batch_size = 1000;
         string nn_options;
 
         auto out = sync_region_cout.new_region();
@@ -1193,7 +1197,7 @@ namespace Learner
             else if (option == "save_only_once") params.save_only_once = true;
             else if (option == "no_shuffle") params.shuffle = false;
 
-            else if (option == "nn_batch_size") is >> nn_batch_size;
+            else if (option == "nn_batch_size") is >> params.nn_batch_size;
             else if (option == "newbob_decay") is >> params.newbob_decay;
             else if (option == "newbob_num_trials") is >> params.newbob_num_trials;
             else if (option == "nn_options") is >> nn_options;
@@ -1269,7 +1273,7 @@ namespace Learner
         out << "  - Loss Function            : " << LOSS_FUNCTION << endl;
         out << "  - minibatch size           : " << params.mini_batch_size << endl;
 
-        out << "  - nn batch size            : " << nn_batch_size << endl;
+        out << "  - nn batch size            : " << params.nn_batch_size << endl;
         out << "  - nn options               : " << nn_options << endl;
 
         out << "  - learning rate            : " << params.learning_rate << endl;
@@ -1300,6 +1304,8 @@ namespace Learner
 
         out << "  - seed                     : " << params.seed << endl;
         out << "  - verbose                  : " << (params.verbose ? "true" : "false") << endl;
+        out << "  - assume_quiet             : " << (params.assume_quiet ? "true" : "false") << endl;
+        out << "  - smart_fen_skipping       : " << (params.smart_fen_skipping ? "true" : "false") << endl;
 
         if (params.auto_lr_drop) {
             out << "  - learning rate scheduling : every " << params.auto_lr_drop << " sfens" << endl;
@@ -1318,7 +1324,7 @@ namespace Learner
         out << "INFO: Started initialization." << endl;
 
         Eval::NNUE::initialize_training(params.seed, out);
-        Eval::NNUE::set_batch_size(nn_batch_size);
+        Eval::NNUE::set_batch_size(params.nn_batch_size);
         Eval::NNUE::set_options(nn_options);
 
         LearnerThink learn_think(params);
