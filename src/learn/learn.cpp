@@ -99,7 +99,8 @@ namespace Learner
     static void append_files_from_dir(
         std::vector<std::string>& filenames,
         const std::string& base_dir,
-        const std::string& target_dir)
+        const std::string& target_dir,
+        bool shuffle)
     {
         string kif_base_dir = Path::combine(base_dir, target_dir);
 
@@ -109,6 +110,15 @@ namespace Learner
                 if (sys::is_regular_file(path))
                     filenames.push_back(Path::combine(target_dir, path.filename().generic_string()));
             });
+
+        if (shuffle)
+        {
+            for (vector<int>::size_type i = 0; i < filenames.size() - 1; i++)
+            {
+                vector<int>::size_type j = i + rand() % (filenames.size() - i);
+                std::swap(filenames[i], filenames[j]);
+            }
+        }
     }
 
     static void rebase_files(
@@ -1250,7 +1260,7 @@ namespace Learner
         // We need to apply base_dir here
         if (!target_dir.empty())
         {
-            append_files_from_dir(params.filenames, base_dir, target_dir);
+            append_files_from_dir(params.filenames, base_dir, target_dir, params.shuffle);
         }
         rebase_files(params.filenames, base_dir);
 
