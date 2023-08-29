@@ -37,6 +37,7 @@ int main(int argc, char* argv[]) {
 
   std::cout << engine_info() << std::endl;
 
+  srand(time(NULL));
   CommandLine::init(argc, argv);
   UCI::init(Options);
   Tune::init();
