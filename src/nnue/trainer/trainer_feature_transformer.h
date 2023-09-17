@@ -77,7 +77,7 @@ namespace Eval::NNUE {
             //const double kSigma = 0.1 / std::sqrt(RawFeatures::kMaxActiveDimensions);
             //auto distribution = std::normal_distribution<double>(0.0, kSigma);
             const double k = 0.1 / std::sqrt(RawFeatures::kMaxActiveDimensions);
-            auto distribution = std::uniform_real_distribution<double>(-k, k);
+            auto distribution = std::uniform_real_distribution<double>(-3.0*k, 3.0*k);
 
             for (IndexType i = 0; i < kHalfDimensions * RawFeatures::kDimensions; ++i) {
                 const auto weight = static_cast<LearnFloatType>(distribution(rng));
