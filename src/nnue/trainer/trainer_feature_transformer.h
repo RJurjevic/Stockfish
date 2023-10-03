@@ -74,10 +74,10 @@ namespace Eval::NNUE {
         void initialize(RNG& rng) {
             std::fill(std::begin(weights_), std::end(weights_), +kZero);
 
-            //const double kSigma = 0.1 / std::sqrt(RawFeatures::kMaxActiveDimensions);
-            //auto distribution = std::normal_distribution<double>(0.0, kSigma);
-            const double k = 0.1 / std::sqrt(RawFeatures::kMaxActiveDimensions);
-            auto distribution = std::uniform_real_distribution<double>(-3.0*k, 3.0*k);
+            const double kSigma = 0.1 / std::sqrt(RawFeatures::kMaxActiveDimensions);
+            auto distribution = std::normal_distribution<double>(0.0, kSigma);
+            //const double k = 0.1 / std::sqrt(RawFeatures::kMaxActiveDimensions);
+            //auto distribution = std::uniform_real_distribution<double>(-3.0*k, 3.0*k);
 
             for (IndexType i = 0; i < kHalfDimensions * RawFeatures::kDimensions; ++i) {
                 const auto weight = static_cast<LearnFloatType>(distribution(rng));
