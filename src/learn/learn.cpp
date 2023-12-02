@@ -495,6 +495,9 @@ namespace Learner
             // NNUE mini batch size
             uint64_t nn_batch_size = 2000;
 
+            // NNUE validation size
+            uint64_t nn_mse_size = 2000;
+
             // Option to exclude early stage from learning
             int reduction_gameply = 1;
 
@@ -678,7 +681,7 @@ namespace Learner
 
         Eval::NNUE::verify_any_net_loaded();
 
-        sfen_for_mse_size = params.nn_batch_size;
+        sfen_for_mse_size = params.nn_mse_size;
 
         const PSVector sfen_for_mse =
             params.validation_set_file_name.empty()
@@ -1208,6 +1211,7 @@ namespace Learner
             else if (option == "no_shuffle") params.shuffle = false;
 
             else if (option == "nn_batch_size") is >> params.nn_batch_size;
+            else if (option == "nn_mse_size") is >> params.nn_mse_size;
             else if (option == "newbob_decay") is >> params.newbob_decay;
             else if (option == "newbob_num_trials") is >> params.newbob_num_trials;
             else if (option == "nn_options") is >> nn_options;
@@ -1284,6 +1288,7 @@ namespace Learner
         out << "  - minibatch size           : " << params.mini_batch_size << endl;
 
         out << "  - nn batch size            : " << params.nn_batch_size << endl;
+        out << "  - nn validation size       : " << params.nn_mse_size << endl;
         out << "  - nn options               : " << nn_options << endl;
 
         out << "  - learning rate            : " << params.learning_rate << endl;
