@@ -807,15 +807,10 @@ namespace Learner
             {
                 if (pos.capture_or_promotion((Move)ps.move) || pos.checkers())
                     goto RETRY_READ;
-
-                const auto [v, _] = Search::qsearch(pos);
-                Value val = Eval::evaluate(pos);
-                if (abs(val - v) > PawnValueMg)
-                    goto RETRY_READ;
             }
 
             // We don't need to qsearch when positions are quiet
-            if (!params.assume_quiet && !params.smart_fen_skipping)
+            if (!params.assume_quiet)
             {
                 int ply = 0;
                 pos.do_move((Move)ps.move, state[ply++]);
