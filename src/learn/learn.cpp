@@ -605,7 +605,7 @@ namespace Learner
 
         void update_weights(const PSVector& psv, uint64_t epoch);
 
-        void calc_loss(const PSVector& psv, uint64_t epoch);
+        void calc_loss(const PSVector& psv, uint64_t epoch, bool smart_fen_skipping);
 
         void calc_loss_worker(
             Thread& th,
@@ -613,6 +613,7 @@ namespace Learner
             const PSVector& psv,
             Loss& test_loss_sum,
             atomic<double>& sum_norm,
+            bool smart_fen_skipping,
             atomic<int>& move_accord_count
         );
 
@@ -704,7 +705,7 @@ namespace Learner
 
         if (params.newbob_decay != 1.0) {
 
-            calc_loss(sfen_for_mse, 0);
+            calc_loss(sfen_for_mse, 0, params.smart_fen_skipping);
 
             best_loss = latest_loss_sum / latest_loss_count;
             latest_loss_sum = 0.0;
@@ -860,13 +861,13 @@ namespace Learner
             loss_output_count = 0;
 
             // loss calculation
-            calc_loss(psv, epoch);
+            calc_loss(psv, epoch, params.smart_fen_skipping);
 
             Eval::NNUE::check_health();
         }
     }
 
-    void LearnerThink::calc_loss(const PSVector& psv, uint64_t epoch)
+    void LearnerThink::calc_loss(const PSVector& psv, uint64_t epoch, bool smart_fen_skipping)
     {
         TT.new_search();
         TimePoint elapsed = now() - Search::Limits.startTime + 1;
@@ -911,6 +912,7 @@ namespace Learner
                 psv,
                 test_loss_sum,
                 sum_norm,
+                smart_fen_skipping,
                 move_accord_count
             );
         });
@@ -945,6 +947,7 @@ namespace Learner
         const PSVector& psv,
         Loss& test_loss_sum,
         atomic<double>& sum_norm,
+        bool smart_fen_skipping,
         atomic<int>& move_accord_count
     )
     {
@@ -966,6 +969,12 @@ namespace Learner
             {
                 cout << "Error! : illegal packed sfen " << pos.fen() << endl;
                 continue;
+            }
+
+            if (smart_fen_skipping)
+            {
+                if (pos.capture_or_promotion((Move)ps.move) || pos.checkers())
+                    continue;
             }
 
             const Value shallow_value = get_shallow_value(pos);
