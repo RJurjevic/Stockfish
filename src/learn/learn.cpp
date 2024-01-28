@@ -614,6 +614,7 @@ namespace Learner
             Loss& test_loss_sum,
             atomic<double>& sum_norm,
             bool smart_fen_skipping,
+            atomic<int>& smart_fen_skipping_count,
             atomic<int>& move_accord_count
         );
 
@@ -894,6 +895,8 @@ namespace Learner
         // search matches the pv first move of search(1).
         atomic<int> move_accord_count{0};
 
+        atomic<int> smart_fen_skipping_count{0};
+
         auto mainThread = Threads.main();
         mainThread->execute_with_worker([&out](auto& th){
             auto& pos = th.rootPos;
@@ -913,15 +916,18 @@ namespace Learner
                 test_loss_sum,
                 sum_norm,
                 smart_fen_skipping,
+                smart_fen_skipping_count,
                 move_accord_count
             );
         });
         Threads.wait_for_workers_finished();
 
-        latest_loss_sum += test_loss_sum.value();
-        latest_loss_count += psv.size();
+        uint64_t psv_size = psv.size() - smart_fen_skipping_count;
 
-        if (psv.size() && test_loss_sum.count() > 0)
+        latest_loss_sum += test_loss_sum.value();
+        latest_loss_count += psv_size;
+
+        if (psv_size && test_loss_sum.count() > 0)
         {
             test_loss_sum.print_only_loss("valid", out);
 
@@ -931,11 +937,11 @@ namespace Learner
             }
 
             out << "  - norm                   = " << sum_norm << endl;
-            out << "  - move accuracy          = " << (move_accord_count * 100.0 / psv.size()) << "%" << endl;
+            out << "  - move accuracy          = " << (move_accord_count * 100.0 / psv_size) << "%" << endl;
         }
         else
         {
-            out << "ERROR: psv.size() = " << psv.size() << " ,  done = " << test_loss_sum.count() << endl;
+            out << "ERROR: psv_size = " << psv_size << " ,  done = " << test_loss_sum.count() << endl;
         }
 
         learn_loss_sum.reset();
@@ -948,6 +954,7 @@ namespace Learner
         Loss& test_loss_sum,
         atomic<double>& sum_norm,
         bool smart_fen_skipping,
+        atomic<int>& smart_fen_skipping_count,
         atomic<int>& move_accord_count
     )
     {
@@ -974,7 +981,10 @@ namespace Learner
             if (smart_fen_skipping)
             {
                 if (pos.capture_or_promotion((Move)ps.move) || pos.checkers())
+                {
+					smart_fen_skipping_count++;
                     continue;
+				}
             }
 
             const Value shallow_value = get_shallow_value(pos);
