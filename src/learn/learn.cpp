@@ -531,6 +531,7 @@ namespace Learner
 
             bool assume_quiet = false;
             bool smart_fen_skipping = false;
+            bool smart_fen_choosing = false;
 
             double learning_rate = 1.0;
             double learning_rate_min = 0.0;
@@ -805,10 +806,33 @@ namespace Learner
                 goto RETRY_READ;
             }
 
+            // We may skip positions with captures and when in check
             if (params.smart_fen_skipping)
             {
                 if (pos.capture_or_promotion((Move)ps.move) || pos.checkers())
                     goto RETRY_READ;
+            }
+
+            // We may need to qsearch when not all positions are quiet
+            if (params.assume_quiet && params.smart_fen_choosing)
+            {
+                if (pos.checkers())
+                    goto RETRY_READ;
+
+                const auto [v, _] = Search::qsearch(pos);
+                if (abs(Eval::evaluate(pos) - v) > 250)
+                {
+                    int ply = 0;
+                    pos.do_move((Move)ps.move, state[ply++]);
+
+                    // Evaluation value of shallow search (qsearch)
+                    const auto [_, pv] = Search::qsearch(pos);
+
+                    for (auto m : pv)
+                    {
+                        pos.do_move(m, state[ply++]);
+                    }
+                }
             }
 
             // We don't need to qsearch when positions are quiet
@@ -982,9 +1006,9 @@ namespace Learner
             {
                 if (pos.capture_or_promotion((Move)ps.move) || pos.checkers())
                 {
-					smart_fen_skipping_count++;
+                    smart_fen_skipping_count++;
                     continue;
-				}
+                }
             }
 
             const Value shallow_value = get_shallow_value(pos);
@@ -1263,6 +1287,7 @@ namespace Learner
             else if (option == "verbose") params.verbose = true;
             else if (option == "assume_quiet") params.assume_quiet = true;
             else if (option == "smart_fen_skipping") params.smart_fen_skipping = true;
+            else if (option == "smart_fen_choosing") params.smart_fen_choosing = true;
             else
             {
                 out << "INFO: Unknown option: " << option << ". Ignoring.\n";
@@ -1339,6 +1364,7 @@ namespace Learner
         out << "  - verbose                  : " << (params.verbose ? "true" : "false") << endl;
         out << "  - assume_quiet             : " << (params.assume_quiet ? "true" : "false") << endl;
         out << "  - smart_fen_skipping       : " << (params.smart_fen_skipping ? "true" : "false") << endl;
+        out << "  - smart_fen_choosing       : " << (params.smart_fen_choosing ? "true" : "false") << endl;
 
         if (params.auto_lr_drop) {
             out << "  - learning rate scheduling : every " << params.auto_lr_drop << " sfens" << endl;
