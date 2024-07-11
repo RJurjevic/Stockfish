@@ -818,11 +818,13 @@ namespace Learner
                 pos.do_move((Move)ps.move, state[ply++]);
 
                 // Evaluation value of shallow search (qsearch)
-                const auto [_, pv] = Search::qsearch(pos);
-
-                for (auto m : pv)
+                const auto [v, pv] = Search::qsearch(pos);
+                if (abs(Eval::evaluate(pos) - v) > 30)
                 {
-                    pos.do_move(m, state[ply++]);
+                    for (auto m : pv)
+                    {
+                        pos.do_move(m, state[ply++]);
+                    }
                 }
             }
 
