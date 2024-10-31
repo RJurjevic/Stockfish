@@ -533,7 +533,7 @@ namespace Learner
             bool assume_quiet = false;
             bool smart_fen_skipping = false;
 			
-			int quiescence_threshold = 30;
+            int quiescence_threshold = 30;
 
             double learning_rate = 1.0;
             double learning_rate_min = 0.0;
