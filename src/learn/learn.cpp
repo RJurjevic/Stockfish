@@ -1352,8 +1352,8 @@ namespace Learner
 
         out << "  - seed                     : " << params.seed << endl;
         out << "  - verbose                  : " << (params.verbose ? "true" : "false") << endl;
-        out << "  - assume_quiet             : " << (params.assume_quiet ? "true" : "false") << endl;
-        out << "  - smart_fen_skipping       : " << (params.smart_fen_skipping ? "true" : "false") << endl;
+        out << "  - assume quiet             : " << (params.assume_quiet ? "true" : "false") << endl;
+        out << "  - smart fen skipping       : " << (params.smart_fen_skipping ? "true" : "false") << endl;
 		
         out << "  - quiescence threshold     : " << params.quiescence_threshold << endl;		
 
@@ -1362,9 +1362,9 @@ namespace Learner
         }
         else if (params.newbob_decay != 1.0) {
             out << "  - learning rate scheduling : newbob with decay" << endl;
-            out << "  - newbob_decay             : " << params.newbob_decay << endl;
-            out << "  - decay_step               : " << params.decay_step << endl;						
-            out << "  - newbob_num_trials        : " << params.newbob_num_trials << endl;
+            out << "  - newbob decay             : " << params.newbob_decay << endl;
+            out << "  - decay step               : " << params.decay_step << endl;						
+            out << "  - newbob num trials        : " << params.newbob_num_trials << endl;
         }
         else {
             out << "  - learning rate scheduling : fixed learning rate" << endl;
