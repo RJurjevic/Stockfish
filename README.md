@@ -1,12 +1,12 @@
 <p align="center">
-  <img src="https://cdn.discordapp.com/attachments/724700045525647420/729135226365804594/SFNNUE2.png">
+  <img src="https://github.com/RJurjevic/Stockfish/blob/master/vafra-logo.jpg">
 </p>
 
-<h1 align="center">Stockfish NNUE</h1>
+<h1 align="center">Vafra Stockfish NNUE</h1>
 
 ## Overview
 
-Stockfish NNUE is a port of a shogi neural network named NNUE (efficiently updateable neural network backwards) to Stockfish 11. To learn more about the Stockfish chess engine, look [here](stockfish.md) for an overview and [here](https://github.com/official-stockfish/Stockfish) for the official repository.
+This custom version of Nodchip's NNUE trainer has been adapted specifically for Vafra, a unique variant of Stockfish optimized with specialized training techniques and parameters. Stockfish NNUE itself is a port of a shogi neural network named NNUE (efficiently updatable neural network backwards) to Stockfish 11. To learn more about the Stockfish chess engine, look [here](stockfish.md) for an overview and [here](https://github.com/official-stockfish/Stockfish) for the official repository.
 
 =======
 ## Building
