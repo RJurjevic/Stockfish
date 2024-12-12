@@ -532,7 +532,7 @@ namespace Learner
 
             bool assume_quiet = false;
             bool smart_fen_skipping = false;
-			
+
             int quiescence_threshold = 30;
 
             double learning_rate = 1.0;
@@ -814,14 +814,22 @@ namespace Learner
                     goto RETRY_READ;
             }
 
-            // We don't need to qsearch when positions are quiet
+            // Perform qsearch only for non-quiet positions
             if (!params.assume_quiet)
             {
                 int ply = 0;
                 pos.do_move((Move)ps.move, state[ply++]);
 
-                // Evaluation value of shallow search (qsearch)
+                // Temporarily set NNUE to use classical evaluation for qsearch
+                auto originalMode = Eval::NNUE::useNNUE;
+                Eval::NNUE::useNNUE = Eval::NNUE::UseNNUEMode::False; // Switch to classical evaluation mode
+
+				// Perform qsearch with classical evaluation
                 const auto [v, pv] = Search::qsearch(pos);
+
+                // Compare the classical evaluation with qsearch result
+                // If the absolute difference exceeds the quiescence threshold,
+                // traverse the principal variation and apply further moves
                 if (abs(Eval::evaluate(pos) - v) > params.quiescence_threshold)
                 {
                     for (auto m : pv)
@@ -829,6 +837,9 @@ namespace Learner
                         pos.do_move(m, state[ply++]);
                     }
                 }
+
+                // Restore the original NNUE mode after qsearch
+                Eval::NNUE::useNNUE = originalMode;
             }
 
             // We want to position being trained on not to be terminal
@@ -1053,18 +1064,18 @@ namespace Learner
 
         auto drop_lr = [&]() {
             last_lr_drop = total_done;
-			
-            int non_improving_trials = std::max(std::max(params.newbob_num_trials - trials, 0), 5);		
-            double adaptive_decay = params.newbob_decay / std::pow(params.decay_step, 
+
+            int non_improving_trials = std::max(std::max(params.newbob_num_trials - trials, 0), 5);
+            double adaptive_decay = params.newbob_decay / std::pow(params.decay_step,
                 static_cast<double>(non_improving_trials));
             double learning_rate_new = std::max(params.learning_rate * adaptive_decay, params.learning_rate_min);
-				
+
             out
                 << "  - reducing learning rate from " << params.learning_rate
                 << " to " << learning_rate_new
                 << " (" << trials << " more trials)" << endl;
 
-            params.learning_rate = learning_rate_new;			
+            params.learning_rate = learning_rate_new;
         };
 
         auto accept = [&]() {
@@ -1242,7 +1253,7 @@ namespace Learner
             else if (option == "nn_batch_size") is >> params.nn_batch_size;
             else if (option == "nn_mse_size") is >> params.nn_mse_size;
             else if (option == "newbob_decay") is >> params.newbob_decay;
-            else if (option == "decay_step") is >> params.decay_step;			
+            else if (option == "decay_step") is >> params.decay_step;
             else if (option == "newbob_num_trials") is >> params.newbob_num_trials;
             else if (option == "nn_options") is >> nn_options;
             else if (option == "auto_lr_drop") is >> params.auto_lr_drop;
@@ -1275,9 +1286,9 @@ namespace Learner
             else if (option == "verbose") params.verbose = true;
             else if (option == "assume_quiet") params.assume_quiet = true;
             else if (option == "smart_fen_skipping") params.smart_fen_skipping = true;
-			
+
             else if (option == "quiescence_threshold") is >> params.quiescence_threshold;
-			
+
             else
             {
                 out << "INFO: Unknown option: " << option << ". Ignoring.\n";
@@ -1354,8 +1365,8 @@ namespace Learner
         out << "  - verbose                  : " << (params.verbose ? "true" : "false") << endl;
         out << "  - assume quiet             : " << (params.assume_quiet ? "true" : "false") << endl;
         out << "  - smart fen skipping       : " << (params.smart_fen_skipping ? "true" : "false") << endl;
-		
-        out << "  - quiescence threshold     : " << params.quiescence_threshold << endl;		
+
+        out << "  - quiescence threshold     : " << params.quiescence_threshold << endl;
 
         if (params.auto_lr_drop) {
             out << "  - learning rate scheduling : every " << params.auto_lr_drop << " sfens" << endl;
@@ -1363,7 +1374,7 @@ namespace Learner
         else if (params.newbob_decay != 1.0) {
             out << "  - learning rate scheduling : newbob with decay" << endl;
             out << "  - newbob decay             : " << params.newbob_decay << endl;
-            out << "  - decay step               : " << params.decay_step << endl;						
+            out << "  - decay step               : " << params.decay_step << endl;
             out << "  - newbob num trials        : " << params.newbob_num_trials << endl;
         }
         else {
