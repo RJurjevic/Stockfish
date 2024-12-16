@@ -820,14 +820,10 @@ namespace Learner
                 int ply = 0;
                 pos.do_move((Move)ps.move, state[ply++]);
 
-                // Temporarily set NNUE to use classical evaluation for qsearch
-                auto originalMode = Eval::NNUE::useNNUE;
-                Eval::NNUE::useNNUE = Eval::NNUE::UseNNUEMode::False; // Switch to classical evaluation mode
-
-				// Perform qsearch with classical evaluation
+                // Perform qsearch using the default NNUE evaluation mode
                 const auto [v, pv] = Search::qsearch(pos);
 
-                // Compare the classical evaluation with qsearch result
+                // Compare the evaluation with the qsearch result
                 // If the absolute difference exceeds the quiescence threshold,
                 // traverse the principal variation and apply further moves
                 if (abs(Eval::evaluate(pos) - v) > params.quiescence_threshold)
@@ -837,9 +833,6 @@ namespace Learner
                         pos.do_move(m, state[ply++]);
                     }
                 }
-
-                // Restore the original NNUE mode after qsearch
-                Eval::NNUE::useNNUE = originalMode;
             }
 
             // We want to position being trained on not to be terminal
