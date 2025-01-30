@@ -819,10 +819,10 @@ namespace Learner
             {
                 int ply = 0;
 
-                // Evaluate the root position using standard evaluation
+                // Evaluate the root position using hybrid evaluation
                 // This ensures we compare the static evaluation of the position
                 // before applying quiescence search.
-                Value v_root = Eval::evaluate(pos);
+                Value v_root = Eval::evaluate_hybrid(pos);
 
                 // Perform quiescence search using hybrid evaluation mode
                 // This allows the search to use classical evaluation in some cases
