@@ -44,6 +44,7 @@ namespace Search {
 
 using std::string;
 using Eval::evaluate;
+using Eval::evaluate_hybrid;
 using namespace Search;
 
 bool Search::prune_at_shallow_depth = true;
@@ -143,6 +144,8 @@ namespace {
 
   template <NodeType NT>
   Value qsearch(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth = 0);
+  template <NodeType NT>
+  Value qsearch_hybrid(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth = 0);
 
   Value value_to_tt(Value v, int ply);
   Value value_from_tt(Value v, int ply, int r50c);
@@ -1628,6 +1631,235 @@ moves_loop: // When in check, search starts from here
   }
 
 
+  // qsearch_hybrid() is the quiescence search function, which is called by the main search
+  // function with zero depth, or recursively with further decreasing depth per call.
+  template <NodeType NT>
+  Value qsearch_hybrid(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth) {
+
+    constexpr bool PvNode = NT == PV;
+
+    assert(alpha >= -VALUE_INFINITE && alpha < beta && beta <= VALUE_INFINITE);
+    assert(PvNode || (alpha == beta - 1));
+    assert(depth <= 0);
+
+    Move pv[MAX_PLY+1];
+    StateInfo st;
+    ASSERT_ALIGNED(&st, Eval::NNUE::kCacheLineSize);
+
+    TTEntry* tte;
+    Key posKey;
+    Move ttMove, move, bestMove;
+    Depth ttDepth;
+    Value bestValue, value, ttValue, futilityValue, futilityBase, oldAlpha;
+    bool pvHit, givesCheck, captureOrPromotion;
+    int moveCount;
+
+    if (PvNode)
+    {
+        oldAlpha = alpha; // To flag BOUND_EXACT when eval above alpha and no available moves
+        (ss+1)->pv = pv;
+        ss->pv[0] = MOVE_NONE;
+    }
+
+    Thread* thisThread = pos.this_thread();
+    (ss+1)->ply = ss->ply + 1;
+    bestMove = MOVE_NONE;
+    ss->inCheck = pos.checkers();
+    moveCount = 0;
+
+    // Check for an immediate draw or maximum ply reached
+    if (   pos.is_draw(ss->ply)
+        || ss->ply >= MAX_PLY)
+        return (ss->ply >= MAX_PLY && !ss->inCheck) ? evaluate_hybrid(pos) : VALUE_DRAW;
+
+    assert(0 <= ss->ply && ss->ply < MAX_PLY);
+
+    // Decide whether or not to include checks: this fixes also the type of
+    // TT entry depth that we are going to use. Note that in qsearch_hybrid we use
+    // only two types of depth in TT: DEPTH_QS_CHECKS or DEPTH_QS_NO_CHECKS.
+    ttDepth = ss->inCheck || depth >= DEPTH_QS_CHECKS ? DEPTH_QS_CHECKS
+                                                  : DEPTH_QS_NO_CHECKS;
+    // Transposition table lookup
+    posKey = pos.key();
+    tte = TT.probe(posKey, ss->ttHit);
+    ttValue = ss->ttHit ? value_from_tt(tte->value(), ss->ply, pos.rule50_count()) : VALUE_NONE;
+    ttMove = ss->ttHit ? tte->move() : MOVE_NONE;
+    pvHit = ss->ttHit && tte->is_pv();
+
+    if (  !PvNode
+        && ss->ttHit
+        && tte->depth() >= ttDepth
+        && ttValue != VALUE_NONE // Only in case of TT access race
+        && (ttValue >= beta ? (tte->bound() & BOUND_LOWER)
+                            : (tte->bound() & BOUND_UPPER)))
+        return ttValue;
+
+    // Evaluate the position statically
+    if (ss->inCheck)
+    {
+        ss->staticEval = VALUE_NONE;
+        bestValue = futilityBase = -VALUE_INFINITE;
+    }
+    else
+    {
+        if (ss->ttHit)
+        {
+            // Never assume anything about values stored in TT
+            if ((ss->staticEval = bestValue = tte->eval()) == VALUE_NONE)
+                ss->staticEval = bestValue = evaluate_hybrid(pos);
+
+            // Can ttValue be used as a better position evaluation?
+            if (    ttValue != VALUE_NONE
+                && (tte->bound() & (ttValue > bestValue ? BOUND_LOWER : BOUND_UPPER)))
+                bestValue = ttValue;
+        }
+        else
+            ss->staticEval = bestValue =
+            (ss-1)->currentMove != MOVE_NULL ? evaluate_hybrid(pos)
+                                             : -(ss-1)->staticEval + 2 * Tempo;
+
+        // Stand pat. Return immediately if static value is at least beta
+        if (bestValue >= beta)
+        {
+            if (!ss->ttHit)
+                tte->save(posKey, value_to_tt(bestValue, ss->ply), false, BOUND_LOWER,
+                          DEPTH_NONE, MOVE_NONE, ss->staticEval);
+
+            return bestValue;
+        }
+
+        if (PvNode && bestValue > alpha)
+            alpha = bestValue;
+
+        futilityBase = bestValue + 155;
+    }
+
+    const PieceToHistory* contHist[] = { (ss-1)->continuationHistory, (ss-2)->continuationHistory,
+                                          nullptr                   , (ss-4)->continuationHistory,
+                                          nullptr                   , (ss-6)->continuationHistory };
+
+    // Initialize a MovePicker object for the current position, and prepare
+    // to search the moves. Because the depth is <= 0 here, only captures,
+    // queen and checking knight promotions, and other checks(only if depth >= DEPTH_QS_CHECKS)
+    // will be generated.
+    MovePicker mp(pos, ttMove, depth, &thisThread->mainHistory,
+                                      &thisThread->captureHistory,
+                                      contHist,
+                                      to_sq((ss-1)->currentMove));
+
+    // Loop through the moves until no moves remain or a beta cutoff occurs
+    while ((move = mp.next_move()) != MOVE_NONE)
+    {
+      assert(is_ok(move));
+
+      givesCheck = pos.gives_check(move);
+      captureOrPromotion = pos.capture_or_promotion(move);
+
+      moveCount++;
+
+      // Futility pruning
+      if (    bestValue > VALUE_TB_LOSS_IN_MAX_PLY
+          && !givesCheck
+          &&  futilityBase > -VALUE_KNOWN_WIN
+          && !pos.advanced_pawn_push(move))
+      {
+          assert(type_of(move) != ENPASSANT); // Due to !pos.advanced_pawn_push
+
+          // moveCount pruning
+          if (moveCount > 2)
+              continue;
+
+          futilityValue = futilityBase + PieceValue[EG][pos.piece_on(to_sq(move))];
+
+          if (futilityValue <= alpha)
+          {
+              bestValue = std::max(bestValue, futilityValue);
+              continue;
+          }
+
+          if (futilityBase <= alpha && !pos.see_ge(move, VALUE_ZERO + 1))
+          {
+              bestValue = std::max(bestValue, futilityBase);
+              continue;
+          }
+      }
+
+      // Do not search moves with negative SEE values
+      if (    bestValue > VALUE_TB_LOSS_IN_MAX_PLY
+          && !(givesCheck && pos.is_discovery_check_on_king(~pos.side_to_move(), move))
+          && !pos.see_ge(move))
+          continue;
+
+      // Speculative prefetch as early as possible
+      prefetch(TT.first_entry(pos.key_after(move)));
+
+      // Check for legality just before making the move
+      if (!pos.legal(move))
+      {
+          moveCount--;
+          continue;
+      }
+
+      ss->currentMove = move;
+      ss->continuationHistory = &thisThread->continuationHistory[ss->inCheck]
+                                                                [captureOrPromotion]
+                                                                [pos.moved_piece(move)]
+                                                                [to_sq(move)];
+
+      // CounterMove based pruning
+      if (  !captureOrPromotion
+          && bestValue > VALUE_TB_LOSS_IN_MAX_PLY
+          && (*contHist[0])[pos.moved_piece(move)][to_sq(move)] < CounterMovePruneThreshold
+          && (*contHist[1])[pos.moved_piece(move)][to_sq(move)] < CounterMovePruneThreshold)
+          continue;
+
+      // Make and search the move
+      pos.do_move(move, st, givesCheck);
+      value = -qsearch_hybrid<NT>(pos, ss+1, -beta, -alpha, depth - 1);
+      pos.undo_move(move);
+
+      assert(value > -VALUE_INFINITE && value < VALUE_INFINITE);
+
+      // Check for a new best move
+      if (value > bestValue)
+      {
+          bestValue = value;
+
+          if (value > alpha)
+          {
+              bestMove = move;
+
+              if (PvNode) // Update pv even in fail-high case
+                  update_pv(ss->pv, move, (ss+1)->pv);
+
+              if (PvNode && value < beta) // Update alpha here!
+                  alpha = value;
+              else
+                  break; // Fail high
+          }
+       }
+    }
+
+    // All legal moves have been searched. A special case: if we're in check
+    // and no legal moves were found, it is checkmate.
+    if (ss->inCheck && bestValue == -VALUE_INFINITE)
+    {
+        assert(!MoveList<LEGAL>(pos).size());
+
+        return mated_in(ss->ply); // Plies to mate from the root
+    }
+
+    tte->save(posKey, value_to_tt(bestValue, ss->ply), pvHit,
+              bestValue >= beta ? BOUND_LOWER :
+              PvNode && bestValue > oldAlpha  ? BOUND_EXACT : BOUND_UPPER,
+              ttDepth, bestMove, ss->staticEval);
+
+    assert(bestValue > -VALUE_INFINITE && bestValue < VALUE_INFINITE);
+
+    return bestValue;
+  }
+
+
   // value_to_tt() adjusts a mate or TB score from "plies to mate from the root" to
   // "plies to mate from the current position". Standard scores are unchanged.
   // The function is called before storing a value in the transposition table.
@@ -2097,6 +2329,50 @@ namespace Search
     }
 
     auto bestValue = ::qsearch<PV>(pos, ss, -VALUE_INFINITE, VALUE_INFINITE, 0);
+
+    // Returns the PV obtained.
+    std::vector<Move> pvs;
+    for (Move* p = &ss->pv[0]; is_ok(*p); ++p)
+      pvs.push_back(*p);
+
+    return ValueAndPV(bestValue, pvs);
+  }
+
+  // Stationary search.
+  //
+  // Precondition) Search thread is set by pos.set_this_thread(Threads[thread_id]).
+  // Also, when Threads.stop arrives, the search is interrupted, so the PV at that time is not correct.
+  // After returning from search(), if Threads.stop == true, do not use the search result.
+  // Also, note that before calling, if you do not call it with Threads.stop == false, the search will be interrupted and it will return.
+  //
+  // If it is clogged, MOVE_RESIGN is returned in the PV array.
+  //
+  //Although it was possible to specify alpha and beta with arguments, this will show the result when searching in that window
+  // Because it writes to the substitution table, the value that can be pruned is written to that window when learning
+  // As it has a bad effect, I decided to stop allowing the window range to be specified.
+  ValueAndPV qsearch_hybrid(Position& pos)
+  {
+    Stack stack[MAX_PLY+10], *ss = stack+7;
+    Move  pv[MAX_PLY+1];
+
+    if (!init_for_search(pos, ss))
+      return {};
+
+    ss->pv = pv; // For the time being, it must be a dummy and somewhere with a buffer.
+
+    if (pos.is_draw(0)) {
+      // Return draw value if draw.
+      return { VALUE_DRAW, {} };
+    }
+
+    // Is it stuck?
+    if (MoveList<LEGAL>(pos).size() == 0)
+    {
+      // Return the mated value if checkmated.
+      return { mated_in(/*ss->ply*/ 0 + 1), {} };
+    }
+
+    auto bestValue = ::qsearch_hybrid<PV>(pos, ss, -VALUE_INFINITE, VALUE_INFINITE, 0);
 
     // Returns the PV obtained.
     std::vector<Move> pvs;

@@ -814,20 +814,27 @@ namespace Learner
                     goto RETRY_READ;
             }
 
-            // Perform qsearch only for non-quiet positions
+            // Perform quiescence search only for non-quiet positions
             if (!params.assume_quiet)
             {
                 int ply = 0;
-                pos.do_move((Move)ps.move, state[ply++]);
 
-                // Perform qsearch using the default NNUE evaluation mode
-                const auto [v, pv] = Search::qsearch(pos);
+                // Evaluate the root position using standard evaluation
+                // This ensures we compare the static evaluation of the position
+                // before applying quiescence search.
+                Value v_root = Eval::evaluate(pos);
 
-                // Compare the evaluation with the qsearch result
-                // If the absolute difference exceeds the quiescence threshold,
-                // traverse the principal variation and apply further moves
-                if (abs(Eval::evaluate(pos) - v) > params.quiescence_threshold)
+                // Perform quiescence search using hybrid evaluation mode
+                // This allows the search to use classical evaluation in some cases
+                // while still leveraging NNUE when beneficial.
+                const auto [v, pv] = Search::qsearch_hybrid(pos);
+
+                // Compare the static root evaluation with the quiescence search result.
+                // If the absolute difference exceeds the quiescence threshold, we assume
+                // that static evaluation is unreliable and traverse deeper into the PV.
+                if (abs(v_root - v) > params.quiescence_threshold)
                 {
+                    // Apply further moves along the quiescence PV to reach a more stable position.
                     for (auto m : pv)
                     {
                         pos.do_move(m, state[ply++]);

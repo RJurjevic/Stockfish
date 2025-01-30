@@ -114,6 +114,7 @@ void clear();
 using ValueAndPV = std::pair<Value, std::vector<Move>>;
 
 ValueAndPV qsearch(Position& pos);
+ValueAndPV qsearch_hybrid(Position& pos);
 ValueAndPV search(Position& pos, int depth_, size_t multiPV = 1, uint64_t nodesLimit = 0);
 
 }
