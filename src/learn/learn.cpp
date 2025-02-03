@@ -531,6 +531,7 @@ namespace Learner
             bool skip_duplicated_positions_in_training = true;
 
             bool assume_quiet = false;
+            bool use_pure_net_eval = false;
             bool smart_fen_skipping = false;
 
             int quiescence_threshold = 30;
@@ -819,15 +820,23 @@ namespace Learner
             {
                 int ply = 0;
 
-                // Evaluate the root position using hybrid evaluation
+                // Evaluate the root position using either pure NNUE or hybrid evaluation
                 // This ensures we compare the static evaluation of the position
                 // before applying quiescence search.
-                Value v_root = Eval::evaluate_hybrid(pos);
+                Value v_root;
+                if (params.use_pure_net_eval)
+                    v_root = Eval::evaluate(pos);  // Pure NNUE evaluation
+                else
+                    v_root = Eval::evaluate_hybrid(pos);  // Hybrid evaluation
 
-                // Perform quiescence search using hybrid evaluation mode
-                // This allows the search to use classical evaluation in some cases
-                // while still leveraging NNUE when beneficial.
-                const auto [v, pv] = Search::qsearch_hybrid(pos);
+                // Perform quiescence search using either pure NNUE or hybrid evaluation
+                // This allows flexibility in training strategies.
+                ValueAndPV result;
+                if (params.use_pure_net_eval)
+                    result = Search::qsearch(pos);  // Pure NNUE qsearch
+                else
+                    result = Search::qsearch_hybrid(pos);  // Hybrid qsearch                
+                const auto [v, pv] = result;
 
                 // Compare the static root evaluation with the quiescence search result.
                 // If the absolute difference exceeds the quiescence threshold, we assume
@@ -1285,6 +1294,7 @@ namespace Learner
             }
             else if (option == "verbose") params.verbose = true;
             else if (option == "assume_quiet") params.assume_quiet = true;
+            else if (option == "use_pure_net_eval") params.use_pure_net_eval = true;
             else if (option == "smart_fen_skipping") params.smart_fen_skipping = true;
 
             else if (option == "quiescence_threshold") is >> params.quiescence_threshold;
@@ -1364,6 +1374,7 @@ namespace Learner
         out << "  - seed                     : " << params.seed << endl;
         out << "  - verbose                  : " << (params.verbose ? "true" : "false") << endl;
         out << "  - assume quiet             : " << (params.assume_quiet ? "true" : "false") << endl;
+        out << "  - use pure net eval        : " << (params.use_pure_net_eval ? "true" : "false") << endl;
         out << "  - smart fen skipping       : " << (params.smart_fen_skipping ? "true" : "false") << endl;
 
         out << "  - quiescence threshold     : " << params.quiescence_threshold << endl;

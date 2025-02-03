@@ -43,6 +43,9 @@ using LearnFloatType = float;
 #include <mutex>
 #include <string>
 
+// A pair of reader and evaluation value. Returned by Learner::search(),Learner::qsearch().
+using ValueAndPV = std::pair<Value, std::vector<Move>>;
+
 namespace Learner
 {
     // ----------------------
