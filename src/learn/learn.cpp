@@ -1026,6 +1026,13 @@ namespace Learner
             local_loss_sum += loss;
             sum_norm += (double)abs(shallow_value);
 
+            // Check if the teacher's move (ps.move) is legal in the current position
+            if (!pos.pseudo_legal((Move)ps.move))
+            {
+                smart_fen_skipping_count++;  // Move is invalid, so we treat this as a skipped position
+                continue;  // Skip further processing to save computation
+            }
+
             // Determine if the teacher's move and the score of the shallow search match
             const auto [value, pv] = Search::search(pos, 1);
             if (pv.size() > 0 && (uint16_t)pv[0] == ps.move)
