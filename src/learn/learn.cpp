@@ -618,7 +618,7 @@ namespace Learner
             Loss& test_loss_sum,
             atomic<double>& sum_norm,
             bool smart_fen_skipping,
-            atomic<int>& smart_fen_skipping_count,
+            atomic<int>& fen_skipping_count,
             atomic<int>& move_accord_count
         );
 
@@ -920,7 +920,7 @@ namespace Learner
         // search matches the pv first move of search(1).
         atomic<int> move_accord_count{0};
 
-        atomic<int> smart_fen_skipping_count{0};
+        atomic<int> fen_skipping_count{0};
 
         auto mainThread = Threads.main();
         mainThread->execute_with_worker([&out](auto& th){
@@ -941,13 +941,13 @@ namespace Learner
                 test_loss_sum,
                 sum_norm,
                 smart_fen_skipping,
-                smart_fen_skipping_count,
+                fen_skipping_count,
                 move_accord_count
             );
         });
         Threads.wait_for_workers_finished();
 
-        uint64_t psv_size = psv.size() - smart_fen_skipping_count;
+        uint64_t psv_size = psv.size() - fen_skipping_count;
 
         latest_loss_sum += test_loss_sum.value();
         latest_loss_count += psv_size;
@@ -980,7 +980,7 @@ namespace Learner
         Loss& test_loss_sum,
         atomic<double>& sum_norm,
         bool smart_fen_skipping,
-        atomic<int>& smart_fen_skipping_count,
+        atomic<int>& fen_skipping_count,
         atomic<int>& move_accord_count
     )
     {
@@ -1008,7 +1008,7 @@ namespace Learner
             {
                 if (pos.capture_or_promotion((Move)ps.move) || pos.checkers())
                 {
-                    smart_fen_skipping_count++;
+                    fen_skipping_count++;
                     continue;
                 }
             }
@@ -1027,9 +1027,9 @@ namespace Learner
             sum_norm += (double)abs(shallow_value);
 
             // Check if the teacher's move (ps.move) is legal in the current position
-            if (!pos.pseudo_legal((Move)ps.move))
+            if (!pos.pseudo_legal((Move)ps.move) || !pos.legal((Move)ps.move))
             {
-                smart_fen_skipping_count++;  // Move is invalid, so we treat this as a skipped position
+                fen_skipping_count++;  // Move is invalid, so we treat this as a skipped position
                 continue;  // Skip further processing to save computation
             }
 
