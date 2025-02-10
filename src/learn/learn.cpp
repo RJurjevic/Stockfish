@@ -534,6 +534,8 @@ namespace Learner
             bool use_pure_net_eval = false;
             bool smart_fen_skipping = false;
 
+            int shallow_search_depth = 1;
+
             int quiescence_threshold = 30;
 
             double learning_rate = 1.0;
@@ -609,7 +611,7 @@ namespace Learner
 
         void update_weights(const PSVector& psv, uint64_t epoch);
 
-        void calc_loss(const PSVector& psv, uint64_t epoch, bool smart_fen_skipping);
+        void calc_loss(const PSVector& psv, uint64_t epoch, int shallow_search_depth, bool smart_fen_skipping);
 
         void calc_loss_worker(
             Thread& th,
@@ -618,6 +620,7 @@ namespace Learner
             Loss& test_loss_sum,
             atomic<double>& sum_norm,
             bool smart_fen_skipping,
+            int shallow_search_depth,
             atomic<int>& fen_skipping_count,
             atomic<int>& move_accord_count
         );
@@ -710,7 +713,7 @@ namespace Learner
 
         if (params.newbob_decay != 1.0) {
 
-            calc_loss(sfen_for_mse, 0, params.smart_fen_skipping);
+            calc_loss(sfen_for_mse, 0, params.shallow_search_depth, params.smart_fen_skipping);
 
             best_loss = latest_loss_sum / latest_loss_count;
             latest_loss_sum = 0.0;
@@ -887,13 +890,13 @@ namespace Learner
             loss_output_count = 0;
 
             // loss calculation
-            calc_loss(psv, epoch, params.smart_fen_skipping);
+            calc_loss(psv, epoch, params.shallow_search_depth, params.smart_fen_skipping);
 
             Eval::NNUE::check_health();
         }
     }
 
-    void LearnerThink::calc_loss(const PSVector& psv, uint64_t epoch, bool smart_fen_skipping)
+    void LearnerThink::calc_loss(const PSVector& psv, uint64_t epoch, int shallow_search_depth, bool smart_fen_skipping)
     {
         TT.new_search();
         TimePoint elapsed = now() - Search::Limits.startTime + 1;
@@ -941,6 +944,7 @@ namespace Learner
                 test_loss_sum,
                 sum_norm,
                 smart_fen_skipping,
+                shallow_search_depth,
                 fen_skipping_count,
                 move_accord_count
             );
@@ -980,6 +984,7 @@ namespace Learner
         Loss& test_loss_sum,
         atomic<double>& sum_norm,
         bool smart_fen_skipping,
+        int shallow_search_depth,
         atomic<int>& fen_skipping_count,
         atomic<int>& move_accord_count
     )
@@ -1034,7 +1039,7 @@ namespace Learner
             }
 
             // Determine if the teacher's move and the score of the shallow search match
-            const auto [value, pv] = Search::search(pos, 1);
+            const auto [value, pv] = Search::search(pos, shallow_search_depth);
             if (pv.size() > 0 && (uint16_t)pv[0] == ps.move)
                 move_accord_count.fetch_add(1, std::memory_order_relaxed);
         }
@@ -1304,6 +1309,8 @@ namespace Learner
             else if (option == "use_pure_net_eval") params.use_pure_net_eval = true;
             else if (option == "smart_fen_skipping") params.smart_fen_skipping = true;
 
+            else if (option == "shallow_search_depth") is >> params.shallow_search_depth;
+
             else if (option == "quiescence_threshold") is >> params.quiescence_threshold;
 
             else
@@ -1385,6 +1392,8 @@ namespace Learner
         out << "  - smart fen skipping       : " << (params.smart_fen_skipping ? "true" : "false") << endl;
 
         out << "  - quiescence threshold     : " << params.quiescence_threshold << endl;
+
+        out << "  - shallow search depth     : " << params.shallow_search_depth << endl;
 
         if (params.auto_lr_drop) {
             out << "  - learning rate scheduling : every " << params.auto_lr_drop << " sfens" << endl;
