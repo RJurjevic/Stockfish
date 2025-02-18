@@ -823,17 +823,21 @@ namespace Learner
             {
                 int ply = 0;
 
-                // Evaluate the root position using either pure NNUE or hybrid evaluation
-                // This ensures we compare the static evaluation of the position
-                // before applying quiescence search.
+                // Always apply Leela's best move first from the dataset (ps.move)
+                // This ensures that the network learns evaluations from the position
+                // after Leela's chosen move is played, aligning training with the dataset's best move.
+                pos.do_move((Move)ps.move, state[ply++]);  
+
+                // Evaluate the position after applying Leela's best move using the selected evaluation mode
+                // If use_pure_net_eval is true, we use pure NNUE evaluation, otherwise hybrid evaluation.
                 Value v_root;
                 if (params.use_pure_net_eval)
                     v_root = Eval::evaluate(pos);  // Pure NNUE evaluation
                 else
                     v_root = Eval::evaluate_hybrid(pos);  // Hybrid evaluation
 
-                // Perform quiescence search using either pure NNUE or hybrid evaluation
-                // This allows flexibility in training strategies.
+                // Perform quiescence search from the position after Leela's best move
+                // This allows the trainer to refine the evaluation by exploring captures and checks.
                 ValueAndPV result;
                 if (params.use_pure_net_eval)
                     result = Search::qsearch(pos);  // Pure NNUE qsearch
@@ -841,12 +845,12 @@ namespace Learner
                     result = Search::qsearch_hybrid(pos);  // Hybrid qsearch                
                 const auto [v, pv] = result;
 
-                // Compare the static root evaluation with the quiescence search result.
-                // If the absolute difference exceeds the quiescence threshold, we assume
-                // that static evaluation is unreliable and traverse deeper into the PV.
+                // Compare the evaluation after Leela's move with the quiescence search result.
+                // If the difference exceeds the quiescence threshold, apply additional moves from the PV
+                // to reach a stable position for a more reliable evaluation.
                 if (abs(v_root - v) > params.quiescence_threshold)
                 {
-                    // Apply further moves along the quiescence PV to reach a more stable position.
+                    // Apply further moves from the quiescence PV to ensure a stable training target
                     for (auto m : pv)
                     {
                         pos.do_move(m, state[ply++]);
