@@ -531,12 +531,12 @@ namespace Learner
             bool skip_duplicated_positions_in_training = true;
 
             bool assume_quiet = false;
-            bool use_pure_net_eval = false;
+            //bool use_pure_net_eval = false;
             bool smart_fen_skipping = false;
 
             int shallow_search_depth = 1;
 
-            int quiescence_threshold = 30;
+            //int quiescence_threshold = 30;
 
             double learning_rate = 1.0;
             double learning_rate_min = 0.0;
@@ -751,6 +751,31 @@ namespace Learner
         save(0, true);
     }
 
+    // Material values for each piece type (standard chess)
+    constexpr int PieceValue[8] = { 0, 100, 320, 330, 500, 900, 20000, 0 };
+    //   (EMPTY, PAWN, KNIGHT, BISHOP, ROOK, QUEEN, KING, UNUSED)
+
+    int get_material_balance(const Position& pos)
+    {
+        int material = 0;
+
+        // Count material for White
+        material += pos.count<PAWN>(WHITE) * 100;
+        material += pos.count<KNIGHT>(WHITE) * 320;
+        material += pos.count<BISHOP>(WHITE) * 320;
+        material += pos.count<ROOK>(WHITE) * 500;
+        material += pos.count<QUEEN>(WHITE) * 900;
+
+        // Count material for Black (subtract values)
+        material -= pos.count<PAWN>(BLACK) * 100;
+        material -= pos.count<KNIGHT>(BLACK) * 320;
+        material -= pos.count<BISHOP>(BLACK) * 320;
+        material -= pos.count<ROOK>(BLACK) * 500;
+        material -= pos.count<QUEEN>(BLACK) * 900;
+
+        return material;
+    }
+
     void LearnerThink::learn_worker(Thread& th, std::atomic<uint64_t>& counter, uint64_t limit)
     {
         const auto thread_id = th.thread_idx();
@@ -807,62 +832,55 @@ namespace Learner
                 Eval::NNUE::add_example(pos, rootColor, shallow_value, ps, 1.0);
             };
 
+            // Ensure that the move from the dataset (Leela's best move) is legal in the current position
+            // If the move is invalid, skip this position and retry with a new one.
             if (!pos.pseudo_legal((Move)ps.move) || !pos.legal((Move)ps.move))
             {
                 goto RETRY_READ;
             }
 
+            // If smart FEN skipping is enabled, ignore positions where a capture, promotion, or check occurs
             if (params.smart_fen_skipping)
             {
                 if (pos.capture_or_promotion((Move)ps.move) || pos.checkers())
                     goto RETRY_READ;
             }
 
-            // Perform quiescence search only for non-quiet positions
-            if (!params.assume_quiet)
+            // Determine if the root position is NOT quiet before making Leela's move
+            // A position is considered non-quiet if Leela's move is a capture, promotion, or check
+            bool root_not_quiet = pos.capture_or_promotion((Move)ps.move) || pos.checkers();
+
+            // Record the material balance before executing Leela's move
+            int material_before = get_material_balance(pos);
+
+            // Always apply Leela's best move first from the dataset (ps.move)
+            int ply = 0;  // Ensure ply is declared
+            pos.do_move((Move)ps.move, state[ply++]);
+
+            // Check if material balance is restored after Leela's move
+            // If material balance is restored, it suggests a recapture rather than an imbalance
+            bool material_balanced = (get_material_balance(pos) == material_before);
+
+            // If the root position was non-quiet AND material balance was not restored,
+            // revert back to the root position to avoid training on an unstable tactical sequence
+            if (root_not_quiet && !material_balanced)
             {
-                int ply = 0;
-
-                // Always apply Leela's best move first from the dataset (ps.move)
-                // This ensures that the network learns evaluations from the position
-                // after Leela's chosen move is played, aligning training with the dataset's best move.
-                pos.do_move((Move)ps.move, state[ply++]);  
-
-                // Evaluate the position after applying Leela's best move using the selected evaluation mode
-                // If use_pure_net_eval is true, we use pure NNUE evaluation, otherwise hybrid evaluation.
-                Value v_root;
-                if (params.use_pure_net_eval)
-                    v_root = Eval::evaluate(pos);  // Pure NNUE evaluation
-                else
-                    v_root = Eval::evaluate_hybrid(pos);  // Hybrid evaluation
-
-                // Perform quiescence search from the position after Leela's best move
-                // This allows the trainer to refine the evaluation by exploring captures and checks.
-                ValueAndPV result;
-                if (params.use_pure_net_eval)
-                    result = Search::qsearch(pos);  // Pure NNUE qsearch
-                else
-                    result = Search::qsearch_hybrid(pos);  // Hybrid qsearch                
-                const auto [v, pv] = result;
-
-                // Compare the evaluation after Leela's move with the quiescence search result.
-                // If the difference exceeds the quiescence threshold, apply additional moves from the PV
-                // to reach a stable position for a more reliable evaluation.
-                if (abs(v_root - v) > params.quiescence_threshold)
+                // Restore the root position
+                if (pos.set_from_packed_sfen(ps.sfen, &si, &th) != 0)
                 {
-                    // Apply further moves from the quiescence PV to ensure a stable training target
-                    for (auto m : pv)
-                    {
-                        pos.do_move(m, state[ply++]);
-                    }
+                    // Malformed SFEN, retry with a different training position
+                    auto out = sync_region_cout.new_region();
+                    out << "ERROR: illegal packed SFEN = " << pos.fen() << endl;
+                    goto RETRY_READ;
                 }
             }
 
-            // We want to position being trained on not to be terminal
+            // Ensure the position being trained on is not a terminal position (no legal moves)
+            // If there are no legal moves, retry with a new position
             if (MoveList<LEGAL>(pos).size() == 0)
                 goto RETRY_READ;
 
-            // Since we have reached the end phase of PV, add the slope here.
+            // Since we have reached the final training position, apply the gradient update
             pos_add_grad();
         }
     }
@@ -1310,12 +1328,12 @@ namespace Learner
             }
             else if (option == "verbose") params.verbose = true;
             else if (option == "assume_quiet") params.assume_quiet = true;
-            else if (option == "use_pure_net_eval") params.use_pure_net_eval = true;
+            //else if (option == "use_pure_net_eval") params.use_pure_net_eval = true;
             else if (option == "smart_fen_skipping") params.smart_fen_skipping = true;
 
             else if (option == "shallow_search_depth") is >> params.shallow_search_depth;
 
-            else if (option == "quiescence_threshold") is >> params.quiescence_threshold;
+            //else if (option == "quiescence_threshold") is >> params.quiescence_threshold;
 
             else
             {
@@ -1392,10 +1410,10 @@ namespace Learner
         out << "  - seed                     : " << params.seed << endl;
         out << "  - verbose                  : " << (params.verbose ? "true" : "false") << endl;
         out << "  - assume quiet             : " << (params.assume_quiet ? "true" : "false") << endl;
-        out << "  - use pure net eval        : " << (params.use_pure_net_eval ? "true" : "false") << endl;
+        //out << "  - use pure net eval        : " << (params.use_pure_net_eval ? "true" : "false") << endl;
         out << "  - smart fen skipping       : " << (params.smart_fen_skipping ? "true" : "false") << endl;
 
-        out << "  - quiescence threshold     : " << params.quiescence_threshold << endl;
+        //out << "  - quiescence threshold     : " << params.quiescence_threshold << endl;
 
         out << "  - shallow search depth     : " << params.shallow_search_depth << endl;
 
