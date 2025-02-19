@@ -751,31 +751,6 @@ namespace Learner
         save(0, true);
     }
 
-    // Material values for each piece type (standard chess)
-    constexpr int PieceValue[8] = { 0, 100, 320, 330, 500, 900, 20000, 0 };
-    //   (EMPTY, PAWN, KNIGHT, BISHOP, ROOK, QUEEN, KING, UNUSED)
-
-    int get_material_balance(const Position& pos)
-    {
-        int material = 0;
-
-        // Count material for White
-        material += pos.count<PAWN>(WHITE) * 100;
-        material += pos.count<KNIGHT>(WHITE) * 320;
-        material += pos.count<BISHOP>(WHITE) * 320;
-        material += pos.count<ROOK>(WHITE) * 500;
-        material += pos.count<QUEEN>(WHITE) * 900;
-
-        // Count material for Black (subtract values)
-        material -= pos.count<PAWN>(BLACK) * 100;
-        material -= pos.count<KNIGHT>(BLACK) * 320;
-        material -= pos.count<BISHOP>(BLACK) * 320;
-        material -= pos.count<ROOK>(BLACK) * 500;
-        material -= pos.count<QUEEN>(BLACK) * 900;
-
-        return material;
-    }
-
     void LearnerThink::learn_worker(Thread& th, std::atomic<uint64_t>& counter, uint64_t limit)
     {
         const auto thread_id = th.thread_idx();
@@ -846,32 +821,32 @@ namespace Learner
                     goto RETRY_READ;
             }
 
-            // Determine if the root position is NOT quiet before making Leela's move
-            // A position is considered non-quiet if Leela's move is a capture, promotion, or check
+            // Check if the root position is NOT quiet before making Leela's move.
+            // A position is considered non-quiet if:
+            //   - Leela's move is a promotion (potential material shift).
+            //   - Leela's move is a capture (may create or resolve material imbalance).
+            //   - The side to move is in check (tactical instability).
             bool root_not_quiet = pos.capture_or_promotion((Move)ps.move) || pos.checkers();
 
-            // Record the material balance before executing Leela's move
-            int material_before = get_material_balance(pos);
-
-            // Always apply Leela's best move first from the dataset (ps.move)
-            int ply = 0;  // Ensure ply is declared
+            // Always apply Leela's best move first from the dataset (ps.move).
+            int ply = 0;
             pos.do_move((Move)ps.move, state[ply++]);
 
-            // Check if material balance is restored after Leela's move
-            // If material balance is restored, it suggests a recapture rather than an imbalance
-            bool material_balanced = (get_material_balance(pos) == material_before);
-
-            // If the root position was non-quiet AND material balance was not restored,
-            // revert back to the root position to avoid training on an unstable tactical sequence
-            if (root_not_quiet && !material_balanced)
+            // If the root position was not quiet before Leela's move, perform quiescence search
+            // to stabilize the position and assign the dataset score to a leaf quiescent position.
+            if (root_not_quiet)
             {
-                // Restore the root position
-                if (pos.set_from_packed_sfen(ps.sfen, &si, &th) != 0)
+                // Perform quiescence search using the default NNUE evaluation mode.
+                const auto [_, pv] = Search::qsearch(pos);
+
+                // Follow the principal variation (PV) from quiescence search until a quiet position is reached.
+                for (auto m : pv)
                 {
-                    // Malformed SFEN, retry with a different training position
-                    auto out = sync_region_cout.new_region();
-                    out << "ERROR: illegal packed SFEN = " << pos.fen() << endl;
-                    goto RETRY_READ;
+                    pos.do_move(m, state[ply++]);
+
+                    // If the new position is quiet (no more captures or checks), stop further moves.
+                    if (!pos.capture_or_promotion(m) && !pos.checkers())
+                        break;
                 }
             }
 
