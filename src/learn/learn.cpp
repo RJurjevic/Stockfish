@@ -531,12 +531,12 @@ namespace Learner
             bool skip_duplicated_positions_in_training = true;
 
             bool assume_quiet = false;
-            //bool use_pure_net_eval = false;
+            bool use_pure_net_eval = false;
             bool smart_fen_skipping = false;
 
             int shallow_search_depth = 1;
 
-            //int quiescence_threshold = 30;
+            int quiescence_threshold = 30;
 
             double learning_rate = 1.0;
             double learning_rate_min = 0.0;
@@ -821,32 +821,43 @@ namespace Learner
                     goto RETRY_READ;
             }
 
-            // Check if the root position is NOT quiet before making Leela's move.
-            // A position is considered non-quiet if:
-            //   - Leela's move is a promotion (potential material shift).
-            //   - Leela's move is a capture (may create or resolve material imbalance).
-            //   - The side to move is in check (tactical instability).
-            bool root_not_quiet = pos.capture_or_promotion((Move)ps.move) || pos.checkers();
-
-            // Always apply Leela's best move first from the dataset (ps.move).
-            int ply = 0;
-            pos.do_move((Move)ps.move, state[ply++]);
-
-            // If the root position was not quiet before Leela's move, perform quiescence search
-            // to stabilize the position and assign the dataset score to a leaf quiescent position.
-            if (root_not_quiet)
+            // Perform quiescence search only for non-quiet positions
+            if (!params.assume_quiet)
             {
-                // Perform quiescence search using the default NNUE evaluation mode.
-                const auto [_, pv] = Search::qsearch(pos);
+                int ply = 0;
 
-                // Follow the principal variation (PV) from quiescence search until a quiet position is reached.
-                for (auto m : pv)
+                // Always apply Leela's best move first from the dataset (ps.move)
+                // This ensures that the network learns evaluations from the position
+                // after Leela's chosen move, aligning training with the dataset's best move.
+                pos.do_move((Move)ps.move, state[ply++]);
+
+                // Evaluate the position after applying Leela's best move using the selected evaluation mode
+                // This gives a static evaluation BEFORE any quiescence search adjustments.
+                Value v_static;
+                if (params.use_pure_net_eval)
+                    v_static = Eval::evaluate(pos);  // Pure NNUE evaluation
+                else
+                    v_static = Eval::evaluate_hybrid(pos);  // Hybrid evaluation
+
+                // Perform quiescence search from the position after Leela's best move
+                // This allows the trainer to refine the evaluation by exploring captures and checks.
+                ValueAndPV result;
+                if (params.use_pure_net_eval)
+                    result = Search::qsearch(pos);  // Pure NNUE qsearch
+                else
+                    result = Search::qsearch_hybrid(pos);  // Hybrid qsearch
+                const auto [v_quiescent, pv] = result;
+
+                // Compare the static evaluation with the quiescence search result.
+                // If the absolute difference exceeds the quiescence threshold, the position is unstable
+                // and we should traverse deeper into the quiescence PV for a more stable evaluation.
+                if (abs(v_static - v_quiescent) > params.quiescence_threshold)
                 {
-                    pos.do_move(m, state[ply++]);
-
-                    // If the new position is quiet (no more captures or checks), stop further moves.
-                    if (!pos.capture_or_promotion(m) && !pos.checkers())
-                        break;
+                    // Apply further moves along the quiescence PV to reach a more stable position.
+                    for (auto m : pv)
+                    {
+                        pos.do_move(m, state[ply++]);
+                    }
                 }
             }
 
@@ -1303,12 +1314,12 @@ namespace Learner
             }
             else if (option == "verbose") params.verbose = true;
             else if (option == "assume_quiet") params.assume_quiet = true;
-            //else if (option == "use_pure_net_eval") params.use_pure_net_eval = true;
+            else if (option == "use_pure_net_eval") params.use_pure_net_eval = true;
             else if (option == "smart_fen_skipping") params.smart_fen_skipping = true;
 
             else if (option == "shallow_search_depth") is >> params.shallow_search_depth;
 
-            //else if (option == "quiescence_threshold") is >> params.quiescence_threshold;
+            else if (option == "quiescence_threshold") is >> params.quiescence_threshold;
 
             else
             {
@@ -1385,10 +1396,10 @@ namespace Learner
         out << "  - seed                     : " << params.seed << endl;
         out << "  - verbose                  : " << (params.verbose ? "true" : "false") << endl;
         out << "  - assume quiet             : " << (params.assume_quiet ? "true" : "false") << endl;
-        //out << "  - use pure net eval        : " << (params.use_pure_net_eval ? "true" : "false") << endl;
+        out << "  - use pure net eval        : " << (params.use_pure_net_eval ? "true" : "false") << endl;
         out << "  - smart fen skipping       : " << (params.smart_fen_skipping ? "true" : "false") << endl;
 
-        //out << "  - quiescence threshold     : " << params.quiescence_threshold << endl;
+        out << "  - quiescence threshold     : " << params.quiescence_threshold << endl;
 
         out << "  - shallow search depth     : " << params.shallow_search_depth << endl;
 
