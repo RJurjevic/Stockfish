@@ -600,6 +600,9 @@ namespace Learner
             latest_loss_count = 0;
             total_done = 0;
             trials = params.newbob_num_trials;
+            // Initialize new counters
+            quiescence_count = 0;
+            post_leela_count = 0;
         }
 
         void learn(uint64_t epochs);
@@ -645,6 +648,9 @@ namespace Learner
         std::atomic<bool> stop_flag;
 
         uint64_t total_done;
+
+        std::atomic<uint64_t> quiescence_count{0};
+        std::atomic<uint64_t> post_leela_count{0};
 
         uint64_t last_lr_drop;
         double best_loss;
@@ -858,6 +864,13 @@ namespace Learner
                     {
                         pos.do_move(m, state[ply++]);
                     }
+                    // Increment quiescence counter
+                    quiescence_count.fetch_add(1, std::memory_order_relaxed);
+                }
+                else
+                {
+                    // After Leela's move is made and no quiescence search is triggered:
+                    post_leela_count.fetch_add(1, std::memory_order_relaxed);
                 }
             }
 
@@ -920,6 +933,18 @@ namespace Learner
 
         out << "  - learning rate          = " << params.learning_rate << endl;
         out << "  - learning rate min      = " << params.learning_rate_min << endl;
+
+        // Calculate the totals and percentages
+        uint64_t total_positions = post_leela_count.load() + quiescence_count.load();
+        double post_leela_percentage = (total_positions > 0)
+                                       ? (post_leela_count.load() * 100.0 / total_positions)
+                                       : 0.0;
+
+        // Output the counts and percentages
+        out << "  - post-Leela positions   = " << post_leela_count.load() << endl;
+        out << "  - quiescence positions   = " << quiescence_count.load() << endl;
+        out << "  - total positions        = " << total_positions << endl;
+        out << "  - post-Leela percentage  = " << post_leela_percentage << "%" << endl;
 
         // For calculation of verification data loss
         Loss test_loss_sum{};
