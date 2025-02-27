@@ -1074,6 +1074,8 @@ namespace Learner
             if (shallow_pv.size() > 0 && (uint16_t)shallow_pv[0] == ps.move)
                 move_accord_count.fetch_add(1, std::memory_order_relaxed);
 
+            int sign = 1; 
+
             // Perform quiescence search only for non-quiet positions
             if (!assume_quiet)
             {
@@ -1081,6 +1083,8 @@ namespace Learner
 
                 // Make Leela's Move Here (after checking move match)
                 pos.do_move((Move)ps.move, state[ply++]);
+				
+				sign *= -1; // Since Leela's move flips the perspective
 
                 // Evaluate the position after applying Leela's best move
                 Value v_static;
@@ -1106,12 +1110,13 @@ namespace Learner
                     for (auto m : pv)
                     {
                         pos.do_move(m, state[ply++]);
+						sign *= -1; // Since move flips the perspective
                     }
                 }
             }
 
             // Now Calculate the Shallow Value After Leela's Move
-            const Value shallow_value = get_shallow_value(pos);
+            const Value shallow_value = sign * get_shallow_value(pos);
 
             // Evaluation value of deep search
             const auto deep_value = (Value)ps.score;
