@@ -614,7 +614,7 @@ namespace Learner
 
         void update_weights(const PSVector& psv, uint64_t epoch);
 
-        void calc_loss(const PSVector& psv, uint64_t epoch, int shallow_search_depth, bool smart_fen_skipping);
+        void calc_loss(const PSVector& psv, uint64_t epoch, int shallow_search_depth, bool smart_fen_skipping, bool assume_quiet, bool use_pure_net_eval, int quiescence_threshold);
 
         void calc_loss_worker(
             Thread& th,
@@ -625,7 +625,10 @@ namespace Learner
             bool smart_fen_skipping,
             int shallow_search_depth,
             atomic<int>& fen_skipping_count,
-            atomic<int>& move_accord_count
+            atomic<int>& move_accord_count,
+            bool assume_quiet,
+            bool use_pure_net_eval,
+            int quiescence_threshold
         );
 
         Value get_shallow_value(Position& pos);
@@ -719,7 +722,7 @@ namespace Learner
 
         if (params.newbob_decay != 1.0) {
 
-            calc_loss(sfen_for_mse, 0, params.shallow_search_depth, params.smart_fen_skipping);
+            calc_loss(sfen_for_mse, 0, params.shallow_search_depth, params.smart_fen_skipping, params.assume_quiet, params.use_pure_net_eval, params.quiescence_threshold);
 
             best_loss = latest_loss_sum / latest_loss_count;
             latest_loss_sum = 0.0;
@@ -911,13 +914,13 @@ namespace Learner
             loss_output_count = 0;
 
             // loss calculation
-            calc_loss(psv, epoch, params.shallow_search_depth, params.smart_fen_skipping);
+            calc_loss(psv, epoch, params.shallow_search_depth, params.smart_fen_skipping, params.assume_quiet, params.use_pure_net_eval, params.quiescence_threshold);
 
             Eval::NNUE::check_health();
         }
     }
 
-    void LearnerThink::calc_loss(const PSVector& psv, uint64_t epoch, int shallow_search_depth, bool smart_fen_skipping)
+    void LearnerThink::calc_loss(const PSVector& psv, uint64_t epoch, int shallow_search_depth, bool smart_fen_skipping, bool assume_quiet, bool use_pure_net_eval, int quiescence_threshold)
     {
         TT.new_search();
         TimePoint elapsed = now() - Search::Limits.startTime + 1;
@@ -979,7 +982,10 @@ namespace Learner
                 smart_fen_skipping,
                 shallow_search_depth,
                 fen_skipping_count,
-                move_accord_count
+                move_accord_count,
+                assume_quiet,
+                use_pure_net_eval,
+                quiescence_threshold
             );
         });
         Threads.wait_for_workers_finished();
@@ -1019,11 +1025,16 @@ namespace Learner
         bool smart_fen_skipping,
         int shallow_search_depth,
         atomic<int>& fen_skipping_count,
-        atomic<int>& move_accord_count
+        atomic<int>& move_accord_count,
+        bool assume_quiet,
+        bool use_pure_net_eval,
+        int quiescence_threshold
     )
     {
         Loss local_loss_sum{};
         auto& pos = th.rootPos;
+
+        std::vector<StateInfo, AlignedAllocator<StateInfo>> state(MAX_PLY);
 
         for(;;)
         {
@@ -1051,6 +1062,55 @@ namespace Learner
                 }
             }
 
+            // Check if the teacher's move (ps.move) is legal in the current position
+            if (!pos.pseudo_legal((Move)ps.move) || !pos.legal((Move)ps.move))
+            {
+                fen_skipping_count++;  // Move is invalid, so we treat this as a skipped position
+                continue;  // Skip further processing to save computation
+            }
+
+            // Determine if the teacher's move and the score of the shallow search match
+            const auto [value, shallow_pv] = Search::search(pos, shallow_search_depth);
+            if (shallow_pv.size() > 0 && (uint16_t)shallow_pv[0] == ps.move)
+                move_accord_count.fetch_add(1, std::memory_order_relaxed);
+
+            // Perform quiescence search only for non-quiet positions
+            if (!assume_quiet)
+            {
+                int ply = 0;
+
+                // Make Leela's Move Here (after checking move match)
+                pos.do_move((Move)ps.move, state[ply++]);
+
+                // Evaluate the position after applying Leela's best move
+                Value v_static;
+                if (use_pure_net_eval)
+                    v_static = Eval::evaluate(pos);  // Pure NNUE evaluation
+                else
+                    v_static = Eval::evaluate_hybrid(pos);  // Hybrid evaluation
+
+                // Perform quiescence search from the position after Leela's best move
+                ValueAndPV result;
+                if (use_pure_net_eval)
+                    result = Search::qsearch(pos);  // Pure NNUE qsearch
+                else
+                    result = Search::qsearch_hybrid(pos);  // Hybrid qsearch
+                const auto [v_quiescent, pv] = result;
+
+                // Compare the static evaluation with the quiescence search result.
+                // If the absolute difference exceeds the quiescence threshold, the position is unstable
+                // and we should traverse deeper into the quiescence PV for a more stable evaluation.
+                if (abs(v_static - v_quiescent) > quiescence_threshold)
+                {
+                    // Apply further moves along the quiescence PV to reach a more stable position.
+                    for (auto m : pv)
+                    {
+                        pos.do_move(m, state[ply++]);
+                    }
+                }
+            }
+
+            // Now Calculate the Shallow Value After Leela's Move
             const Value shallow_value = get_shallow_value(pos);
 
             // Evaluation value of deep search
@@ -1063,18 +1123,6 @@ namespace Learner
 
             local_loss_sum += loss;
             sum_norm += (double)abs(shallow_value);
-
-            // Check if the teacher's move (ps.move) is legal in the current position
-            if (!pos.pseudo_legal((Move)ps.move) || !pos.legal((Move)ps.move))
-            {
-                fen_skipping_count++;  // Move is invalid, so we treat this as a skipped position
-                continue;  // Skip further processing to save computation
-            }
-
-            // Determine if the teacher's move and the score of the shallow search match
-            const auto [value, pv] = Search::search(pos, shallow_search_depth);
-            if (pv.size() > 0 && (uint16_t)pv[0] == ps.move)
-                move_accord_count.fetch_add(1, std::memory_order_relaxed);
         }
 
         test_loss_sum += local_loss_sum;

@@ -685,7 +685,15 @@ namespace Blas {
 
         if (requested_size > s_data_size[idx])
         {
-            s_data[idx] = std::make_unique<float[]>(requested_size);
+            if (requested_size > 0)
+                s_data[idx] = std::make_unique<float[]>(static_cast<std::size_t>(requested_size));
+            else
+            {
+                // Handle negative size gracefully
+                std::cout << "Warning: Negative requested_size = " << requested_size << ". Using size = 0 instead." << std::endl;
+                s_data[idx] = std::make_unique<float[]>(0);
+                s_data_size[idx] = 0;
+            }
             s_data_size[idx] = requested_size;
         }
 
