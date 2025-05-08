@@ -493,7 +493,10 @@ namespace Learner
             uint64_t mini_batch_size = LEARN_MINI_BATCH_SIZE;
 
             // NNUE mini batch size
-            uint64_t nn_batch_size = 2000;
+            double nn_batch_size_precise = 120.0;
+            uint64_t nn_batch_size = 120;
+            uint64_t nn_batch_size_min = 30;
+            bool nn_batch_size_variable = false;
 
             // NNUE validation size
             uint64_t nn_mse_size = 2000;
@@ -1074,7 +1077,7 @@ namespace Learner
             if (shallow_pv.size() > 0 && (uint16_t)shallow_pv[0] == ps.move)
                 move_accord_count.fetch_add(1, std::memory_order_relaxed);
 
-            int sign = 1; 
+            int sign = 1;
 
             // Perform quiescence search only for non-quiet positions
             if (!assume_quiet)
@@ -1083,7 +1086,7 @@ namespace Learner
 
                 // Make Leela's Move Here (after checking move match)
                 pos.do_move((Move)ps.move, state[ply++]);
-				
+
 				sign *= -1; // Since Leela's move flips the perspective
 
                 // Evaluate the position after applying Leela's best move
@@ -1177,12 +1180,38 @@ namespace Learner
                 static_cast<double>(non_improving_trials));
             double learning_rate_new = std::max(params.learning_rate * adaptive_decay, params.learning_rate_min);
 
-            out
-                << "  - reducing learning rate from " << params.learning_rate
-                << " to " << learning_rate_new
-                << " (" << trials << " more trials)" << endl;
+            if (learning_rate_new < params.learning_rate) {
+                out
+                    << "  - reducing learning rate from " << params.learning_rate
+                    << " to " << learning_rate_new
+                    << " (" << trials << " more trials)" << endl;
 
-            params.learning_rate = learning_rate_new;
+                params.learning_rate = learning_rate_new;
+            }
+
+            // Optional batch size decay logic
+            if (params.nn_batch_size_variable) {
+
+                double nn_batch_size_precise_new = std::max(
+                    params.nn_batch_size_precise * adaptive_decay,
+                    static_cast<double>(params.nn_batch_size_min)
+                );
+
+                if (nn_batch_size_precise_new < params.nn_batch_size_precise) {
+                    params.nn_batch_size_precise = nn_batch_size_precise_new;
+                }
+
+                uint64_t nn_batch_size_new = static_cast<uint64_t>(std::round(params.nn_batch_size_precise));
+
+                if (nn_batch_size_new < params.nn_batch_size) {
+                    out
+                        << "  - reducing nn_batch_size from " << params.nn_batch_size
+                        << " to " << nn_batch_size_new << endl;
+
+                    params.nn_batch_size = nn_batch_size_new;
+                    Eval::NNUE::set_batch_size(nn_batch_size_new);
+                }
+            }
         };
 
         auto accept = [&]() {
@@ -1358,6 +1387,9 @@ namespace Learner
             else if (option == "no_shuffle") params.shuffle = false;
 
             else if (option == "nn_batch_size") is >> params.nn_batch_size;
+            else if (option == "nn_batch_size_min") is >> params.nn_batch_size_min;
+            else if (option == "nn_batch_size_variable") params.nn_batch_size_variable = true;
+
             else if (option == "nn_mse_size") is >> params.nn_mse_size;
             else if (option == "newbob_decay") is >> params.newbob_decay;
             else if (option == "decay_step") is >> params.decay_step;
@@ -1405,6 +1437,8 @@ namespace Learner
             }
         }
 
+        params.nn_batch_size_precise = static_cast<double>(params.nn_batch_size);
+
         out << "INFO: Executing learn command\n";
 
         // Issue a warning if OpenMP is disabled.
@@ -1442,6 +1476,9 @@ namespace Learner
         out << "  - minibatch size           : " << params.mini_batch_size << endl;
 
         out << "  - nn batch size            : " << params.nn_batch_size << endl;
+        out << "  - nn batch size min        : " << params.nn_batch_size_min << endl;
+        out << "  - nn batch size variable   : " << (params.nn_batch_size_variable ? "true" : "false") << endl;
+
         out << "  - nn validation size       : " << params.nn_mse_size << endl;
         out << "  - nn options               : " << nn_options << endl;
 
