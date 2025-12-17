@@ -604,8 +604,8 @@ namespace Learner
             total_done = 0;
             trials = params.newbob_num_trials;
             // Initialize new counters
-            quiescence_count = 0;
-            post_leela_count = 0;
+            pvwalk_count = 0;
+            total_count = 0;
         }
 
         void learn(uint64_t epochs);
@@ -655,8 +655,8 @@ namespace Learner
 
         uint64_t total_done;
 
-        std::atomic<uint64_t> quiescence_count{0};
-        std::atomic<uint64_t> post_leela_count{0};
+        std::atomic<uint64_t> pvwalk_count{0};
+        std::atomic<uint64_t> total_count{0};
 
         uint64_t last_lr_drop;
         double best_loss;
@@ -836,47 +836,32 @@ namespace Learner
             // Perform quiescence search only for non-quiet positions
             if (!params.assume_quiet)
             {
-                int ply = 0;
-
-                // Always apply Leela's best move first from the dataset (ps.move)
-                // This ensures that the network learns evaluations from the position
-                // after Leela's chosen move, aligning training with the dataset's best move.
-                pos.do_move((Move)ps.move, state[ply++]);
-
-                // Evaluate the position after applying Leela's best move using the selected evaluation mode
-                // This gives a static evaluation BEFORE any quiescence search adjustments.
-                Value v_static;
+                // Evaluate the position using the selected evaluation mode
+                // This gives a static evaluation before quiescence search
+                Value val;
                 if (params.use_pure_net_eval)
-                    v_static = Eval::evaluate(pos);  // Pure NNUE evaluation
+                    val = Eval::evaluate(pos);  // Pure NNUE evaluation
                 else
-                    v_static = Eval::evaluate_hybrid(pos);  // Hybrid evaluation
-
-                // Perform quiescence search from the position after Leela's best move
-                // This allows the trainer to refine the evaluation by exploring captures and checks.
-                ValueAndPV result;
+                    val = Eval::evaluate_hybrid(pos);  // Hybrid evaluation
+                // Perform quiescence search from the root position
+                ValueAndPV res;
                 if (params.use_pure_net_eval)
-                    result = Search::qsearch(pos);  // Pure NNUE qsearch
+                    res = Search::qsearch(pos);  // Pure NNUE qsearch
                 else
-                    result = Search::qsearch_hybrid(pos);  // Hybrid qsearch
-                const auto [v_quiescent, pv] = result;
-
-                // Compare the static evaluation with the quiescence search result.
-                // If the absolute difference exceeds the quiescence threshold, the position is unstable
-                // and we should traverse deeper into the quiescence PV for a more stable evaluation.
-                if (abs(v_static - v_quiescent) > params.quiescence_threshold)
+                    res = Search::qsearch_hybrid(pos);  // Hybrid qsearch
+                const auto [valq, pv] = res;
+                // Compare the static evaluation with the quiescence search evaluation
+                // If the absolute difference exceeds the quiescence threshold, the position is not quiet
+                if (abs(val - valq) > params.quiescence_threshold)
                 {
-                    // Apply further moves along the quiescence PV to reach a more stable position.
+                    int ply = 0;
+                    // Apply further moves along the quiescence PV to reach a quiet position
                     for (auto m : pv)
                     {
                         pos.do_move(m, state[ply++]);
                     }
                     // Increment quiescence counter
-                    quiescence_count.fetch_add(1, std::memory_order_relaxed);
-                }
-                else
-                {
-                    // After Leela's move is made and no quiescence search is triggered:
-                    post_leela_count.fetch_add(1, std::memory_order_relaxed);
+                    pvwalk_count.fetch_add(1, std::memory_order_relaxed);
                 }
             }
 
@@ -884,6 +869,9 @@ namespace Learner
             // If there are no legal moves, retry with a new position
             if (MoveList<LEGAL>(pos).size() == 0)
                 goto RETRY_READ;
+
+            // Increment total counter
+            total_count.fetch_add(1, std::memory_order_relaxed);
 
             // Since we have reached the final training position, apply the gradient update
             pos_add_grad();
@@ -940,17 +928,17 @@ namespace Learner
         out << "  - learning rate          = " << params.learning_rate << endl;
         out << "  - learning rate min      = " << params.learning_rate_min << endl;
 
-        // Calculate the totals and percentages
-        uint64_t total_positions = post_leela_count.load() + quiescence_count.load();
-        double post_leela_percentage = (total_positions > 0)
-                                       ? (post_leela_count.load() * 100.0 / total_positions)
+        // Calculate quiescence percentage
+        uint64_t total_positions = total_count.load();
+        uint64_t pvwalk_positions = pvwalk_count.load();
+        double pvwalk_percentage = (total_positions > 0)
+                                       ? (pvwalk_positions * 100.0 / total_positions)
                                        : 0.0;
 
         // Output the counts and percentages
-        out << "  - post-Leela positions   = " << post_leela_count.load() << endl;
-        out << "  - quiescence positions   = " << quiescence_count.load() << endl;
         out << "  - total positions        = " << total_positions << endl;
-        out << "  - post-Leela percentage  = " << post_leela_percentage << "%" << endl;
+        out << "  - pvwalk positions       = " << pvwalk_positions << endl;
+        out << "  - pvwalk percentage      = " << pvwalk_percentage << "%" << endl;
 
         // For calculation of verification data loss
         Loss test_loss_sum{};
@@ -1056,6 +1044,8 @@ namespace Learner
                 continue;
             }
 
+            const auto rootColor = pos.side_to_move();
+
             if (smart_fen_skipping)
             {
                 if (pos.capture_or_promotion((Move)ps.move) || pos.checkers())
@@ -1077,46 +1067,45 @@ namespace Learner
             if (shallow_pv.size() > 0 && (uint16_t)shallow_pv[0] == ps.move)
                 move_accord_count.fetch_add(1, std::memory_order_relaxed);
 
-            int sign = 1;
-
             // Perform quiescence search only for non-quiet positions
             if (!assume_quiet)
             {
-                int ply = 0;
-
-                // Make Leela's Move Here (after checking move match)
-                pos.do_move((Move)ps.move, state[ply++]);
-
-				sign *= -1; // Since Leela's move flips the perspective
-
-                // Evaluate the position after applying Leela's best move
-                Value v_static;
+                // Evaluate the position using the selected evaluation mode
+                // This gives a static evaluation before quiescence search
+                Value val;
                 if (use_pure_net_eval)
-                    v_static = Eval::evaluate(pos);  // Pure NNUE evaluation
+                    val = Eval::evaluate(pos);  // Pure NNUE evaluation
                 else
-                    v_static = Eval::evaluate_hybrid(pos);  // Hybrid evaluation
-
-                // Perform quiescence search from the position after Leela's best move
-                ValueAndPV result;
+                    val = Eval::evaluate_hybrid(pos);  // Hybrid evaluation
+                // Perform quiescence search from the root position
+                ValueAndPV res;
                 if (use_pure_net_eval)
-                    result = Search::qsearch(pos);  // Pure NNUE qsearch
+                    res = Search::qsearch(pos);  // Pure NNUE qsearch
                 else
-                    result = Search::qsearch_hybrid(pos);  // Hybrid qsearch
-                const auto [v_quiescent, pv] = result;
-
-                // Compare the static evaluation with the quiescence search result.
-                // If the absolute difference exceeds the quiescence threshold, the position is unstable
-                // and we should traverse deeper into the quiescence PV for a more stable evaluation.
-                if (abs(v_static - v_quiescent) > quiescence_threshold)
+                    res = Search::qsearch_hybrid(pos);  // Hybrid qsearch
+                const auto [valq, pv] = res;
+                // Compare the static evaluation with the quiescence search evaluation
+                // If the absolute difference exceeds the quiescence threshold, the position is not quiet
+                if (abs(val - valq) > quiescence_threshold)
                 {
-                    // Apply further moves along the quiescence PV to reach a more stable position.
+                    int ply = 0;
+                    // Apply further moves along the quiescence PV to reach a quiet position
                     for (auto m : pv)
                     {
                         pos.do_move(m, state[ply++]);
-						sign *= -1; // Since move flips the perspective
                     }
                 }
             }
+
+            // Ensure the position being trained on is not a terminal position (no legal moves)
+            // If there are no legal moves, retry with a new position
+            if (MoveList<LEGAL>(pos).size() == 0)
+            {
+                fen_skipping_count++;
+                continue;
+            }
+
+            const int sign = (pos.side_to_move() == rootColor) ? 1 : -1;
 
             // Now Calculate the Shallow Value After Leela's Move
             const Value shallow_value = sign * get_shallow_value(pos);
