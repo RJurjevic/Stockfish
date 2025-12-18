@@ -606,6 +606,9 @@ namespace Learner
             // Initialize new counters
             pvwalk_count = 0;
             total_count = 0;
+            pvwalk_ply_sum = 0;
+            pvwalk_ply_min = UINT32_MAX;
+            pvwalk_ply_max = 0;
         }
 
         void learn(uint64_t epochs);
@@ -657,6 +660,9 @@ namespace Learner
 
         std::atomic<uint64_t> pvwalk_count{0};
         std::atomic<uint64_t> total_count{0};
+        std::atomic<uint64_t> pvwalk_ply_sum{0};
+        std::atomic<uint32_t> pvwalk_ply_min{UINT32_MAX};
+        std::atomic<uint32_t> pvwalk_ply_max{0};
 
         uint64_t last_lr_drop;
         double best_loss;
@@ -860,8 +866,20 @@ namespace Learner
                     {
                         pos.do_move(m, state[ply++]);
                     }
-                    // Increment quiescence counter
+                    // Increment quiescence counters
                     pvwalk_count.fetch_add(1, std::memory_order_relaxed);
+                    const uint32_t pvlen = (uint32_t)pv.size();
+                    pvwalk_ply_sum.fetch_add(pvlen, std::memory_order_relaxed);
+                    // min (CAS loop)
+                    uint32_t cur_min = pvwalk_ply_min.load(std::memory_order_relaxed);
+                    while (pvlen < cur_min &&
+                           !pvwalk_ply_min.compare_exchange_weak(cur_min, pvlen,
+                               std::memory_order_relaxed, std::memory_order_relaxed)) {}
+                    // max (CAS loop)
+                    uint32_t cur_max = pvwalk_ply_max.load(std::memory_order_relaxed);
+                    while (pvlen > cur_max &&
+                           !pvwalk_ply_max.compare_exchange_weak(cur_max, pvlen,
+                               std::memory_order_relaxed, std::memory_order_relaxed)) {}
                 }
             }
 
@@ -929,16 +947,25 @@ namespace Learner
         out << "  - learning rate min      = " << params.learning_rate_min << endl;
 
         // Calculate quiescence percentage
-        uint64_t total_positions = total_count.load();
-        uint64_t pvwalk_positions = pvwalk_count.load();
-        double pvwalk_percentage = (total_positions > 0)
-                                       ? (pvwalk_positions * 100.0 / total_positions)
-                                       : 0.0;
+        uint64_t total_positions = total_count.load(std::memory_order_relaxed);
+        uint64_t pvwalk_positions = pvwalk_count.load(std::memory_order_relaxed);
+        double pvwalk_percentage = (total_positions > 0) ? (pvwalk_positions * 100.0 / total_positions) : 0.0;
+        // PV-walk ply stats (only meaningful when pvwalk_positions > 0)
+        uint64_t pvwalk_ply_total = pvwalk_ply_sum.load(std::memory_order_relaxed);
+        double pvwalk_avg_ply = (pvwalk_positions > 0) ? (double)pvwalk_ply_total / (double)pvwalk_positions : 0.0;
+        uint32_t pvwalk_min_ply = pvwalk_ply_min.load(std::memory_order_relaxed);
+        uint32_t pvwalk_max_ply = pvwalk_ply_max.load(std::memory_order_relaxed);
+        // If no pvwalk happened yet, avoid printing UINT32_MAX as "min"
+        if (pvwalk_positions == 0)
+            pvwalk_min_ply = 0;
 
         // Output the counts and percentages
         out << "  - total positions        = " << total_positions << endl;
         out << "  - pvwalk positions       = " << pvwalk_positions << endl;
         out << "  - pvwalk percentage      = " << pvwalk_percentage << "%" << endl;
+        out << "  - pvwalk avg plies       = " << pvwalk_avg_ply << endl;
+        out << "  - pvwalk min plies       = " << pvwalk_min_ply << endl;
+        out << "  - pvwalk max plies       = " << pvwalk_max_ply << endl;
 
         // For calculation of verification data loss
         Loss test_loss_sum{};
