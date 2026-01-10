@@ -856,9 +856,9 @@ namespace Learner
                 else
                     res = Search::qsearch_hybrid(pos);  // Hybrid qsearch
                 const auto [valq, pv] = res;
-                // Compare the static evaluation with the quiescence search evaluation
-                // If the absolute difference exceeds the quiescence threshold, the position is not quiet
-                if (abs(val - valq) > params.quiescence_threshold)
+                // PV-walk only when qsearch improves on the static eval (side-to-move POV),
+                // indicating a likely non-quiet position with tactical exchanges.
+                if (!pv.empty() && (valq - val > params.quiescence_threshold))
                 {
                     int ply = 0;
                     // Apply further moves along the quiescence PV to reach a quiet position
@@ -1111,9 +1111,9 @@ namespace Learner
                 else
                     res = Search::qsearch_hybrid(pos);  // Hybrid qsearch
                 const auto [valq, pv] = res;
-                // Compare the static evaluation with the quiescence search evaluation
-                // If the absolute difference exceeds the quiescence threshold, the position is not quiet
-                if (abs(val - valq) > quiescence_threshold)
+                // PV-walk only when qsearch improves on the static eval (side-to-move POV),
+                // indicating a likely non-quiet position with tactical exchanges.
+                if (!pv.empty() && (valq - val > quiescence_threshold))
                 {
                     int ply = 0;
                     // Apply further moves along the quiescence PV to reach a quiet position
