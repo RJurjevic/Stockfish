@@ -815,16 +815,6 @@ namespace Learner
 
             const auto rootColor = pos.side_to_move();
 
-            // A function that adds the current `pos` and `ps`
-            // to the training set.
-            auto pos_add_grad = [&]() {
-
-                // Evaluation value of deep search
-                const Value shallow_value = Eval::evaluate(pos);
-
-                Eval::NNUE::add_example(pos, rootColor, shallow_value, ps, 1.0);
-            };
-
             // Ensure that the move from the dataset (Leela's best move) is legal in the current position
             // If the move is invalid, skip this position and retry with a new one.
             if (!pos.pseudo_legal((Move)ps.move) || !pos.legal((Move)ps.move))
@@ -888,11 +878,19 @@ namespace Learner
             if (MoveList<LEGAL>(pos).size() == 0)
                 goto RETRY_READ;
 
+            const Color trainColor = pos.side_to_move();
+            const int sign = (trainColor == rootColor) ? 1 : -1;
+
+            // don't mutate ps if you don't want to; make a copy
+            PackedSfenValue ps2 = ps;
+            ps2.score = sign * ps.score;
+
             // Increment total counter
             total_count.fetch_add(1, std::memory_order_relaxed);
 
-            // Since we have reached the final training position, apply the gradient update
-            pos_add_grad();
+            // add example using trainColor (so e.sign will be +1)
+            const Value shallow_value = Eval::evaluate(pos);
+            Eval::NNUE::add_example(pos, trainColor, shallow_value, ps2, 1.0);
         }
     }
 
@@ -1133,17 +1131,15 @@ namespace Learner
             }
 
             const int sign = (pos.side_to_move() == rootColor) ? 1 : -1;
+            const Value shallow_value = get_shallow_value(pos);
 
-            // Now Calculate the Shallow Value After Leela's Move
-            const Value shallow_value = sign * get_shallow_value(pos);
-
-            // Evaluation value of deep search
-            const auto deep_value = (Value)ps.score;
+            PackedSfenValue ps2 = ps;
+            ps2.score = sign * ps.score;
 
             const auto loss = get_loss_no_grad(
-                deep_value,
+                (Value)ps2.score,
                 shallow_value,
-                ps);
+                ps2);
 
             local_loss_sum += loss;
             sum_norm += (double)abs(shallow_value);
