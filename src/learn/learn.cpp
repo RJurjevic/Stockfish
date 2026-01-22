@@ -1087,10 +1087,12 @@ namespace Learner
                 continue;  // Skip further processing to save computation
             }
 
+            bool root_move_accord = false;
+
             // Determine if the teacher's move and the score of the shallow search match
             const auto [value, shallow_pv] = Search::search(pos, shallow_search_depth);
             if (shallow_pv.size() > 0 && (uint16_t)shallow_pv[0] == ps.move)
-                move_accord_count.fetch_add(1, std::memory_order_relaxed);
+                root_move_accord = true;
 
             // Perform quiescence search only for non-quiet positions
             if (!assume_quiet)
@@ -1129,6 +1131,9 @@ namespace Learner
                 fen_skipping_count++;
                 continue;
             }
+
+            if (root_move_accord)
+                move_accord_count.fetch_add(1, std::memory_order_relaxed);
 
             const int sign = (pos.side_to_move() == rootColor) ? 1 : -1;
             const Value shallow_value = get_shallow_value(pos);
