@@ -822,6 +822,12 @@ namespace Learner
                 goto RETRY_READ;
             }
 
+            // Skip root positions where the side to move is already in check.
+            // The training path below compares ordinary static evaluation with qsearch,
+            // and that heuristic is intended for non-check roots rather than forced evasions.
+            if (pos.checkers())
+                goto RETRY_READ;
+
             // If smart FEN skipping is enabled, ignore positions where a capture, promotion, or check occurs
             if (params.smart_fen_skipping)
             {
@@ -1070,6 +1076,12 @@ namespace Learner
             }
 
             const auto rootColor = pos.side_to_move();
+
+            if (pos.checkers())
+            {
+				fen_skipping_count++;
+				continue;
+			}
 
             if (smart_fen_skipping)
             {
