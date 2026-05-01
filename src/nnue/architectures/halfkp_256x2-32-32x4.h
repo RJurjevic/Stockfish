@@ -18,8 +18,8 @@
 
 // Definition of input features and network structure used in NNUE evaluation function
 
-#ifndef NNUE_HALFKP_256X2_32_32_H_INCLUDED
-#define NNUE_HALFKP_256X2_32_32_H_INCLUDED
+#ifndef NNUE_HALFKP_256X2_32_32X4_H_INCLUDED
+#define NNUE_HALFKP_256X2_32_32X4_H_INCLUDED
 
 #include "nnue/features/feature_set.h"
 #include "nnue/features/half_kp.h"
@@ -27,6 +27,7 @@
 #include "nnue/layers/input_slice.h"
 #include "nnue/layers/affine_transform.h"
 #include "nnue/layers/clipped_relu.h"
+#include "nnue/layers/bucketed_tail.h"
 
 namespace Eval::NNUE {
 
@@ -42,8 +43,7 @@ namespace Eval::NNUE {
         // Define network structure
         using InputLayer = InputSlice<kTransformedFeatureDimensions * 2>;
         using HiddenLayer1 = ClippedReLU<AffineTransform<InputLayer, 32>>;
-        using HiddenLayer2 = ClippedReLU<AffineTransform<HiddenLayer1, 32>>;
-        using OutputLayer = AffineTransform<HiddenLayer2, 1>;
+        using OutputLayer = BucketedTail<HiddenLayer1, 4, 32>;
 
     }  // namespace Layers
 
@@ -51,4 +51,4 @@ namespace Eval::NNUE {
 
 }  // namespace Eval::NNUE
 
-#endif // #ifndef NNUE_HALFKP_256X2_32_32_H_INCLUDED
+#endif // #ifndef NNUE_HALFKP_256X2_32_32X4_H_INCLUDED
