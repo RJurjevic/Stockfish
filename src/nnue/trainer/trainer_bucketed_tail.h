@@ -428,6 +428,103 @@ namespace Eval::NNUE {
                     ? 0.0
                     : abs_weights_diff_sum_ / num_weights_diffs_;
 
+            double hidden_bias_bucket_delta_sum = 0.0;
+            double hidden_weight_bucket_delta_sum = 0.0;
+            double output_bias_bucket_delta_sum = 0.0;
+            double output_weight_bucket_delta_sum = 0.0;
+
+            double hidden_bias_bucket_delta_max = 0.0;
+            double hidden_weight_bucket_delta_max = 0.0;
+            double output_bias_bucket_delta_max = 0.0;
+            double output_weight_bucket_delta_max = 0.0;
+
+            for (IndexType bucket = 1; bucket < kBucketCount; ++bucket) {
+                const IndexType hidden_bias_offset =
+                    bucket * kHiddenDimensions;
+
+                const IndexType hidden_weight_offset =
+                    bucket * kHiddenDimensions * kInputDimensions;
+
+                const IndexType output_weight_offset =
+                    bucket * kHiddenDimensions;
+
+                for (IndexType h = 0; h < kHiddenDimensions; ++h) {
+                    const double hidden_bias_delta = std::abs(
+                        hidden_biases_[hidden_bias_offset + h]
+                        - hidden_biases_[h]);
+
+                    hidden_bias_bucket_delta_sum += hidden_bias_delta;
+                    hidden_bias_bucket_delta_max =
+                        std::max(hidden_bias_bucket_delta_max, hidden_bias_delta);
+
+                    const double output_weight_delta = std::abs(
+                        output_weights_[output_weight_offset + h]
+                        - output_weights_[h]);
+
+                    output_weight_bucket_delta_sum += output_weight_delta;
+                    output_weight_bucket_delta_max =
+                        std::max(output_weight_bucket_delta_max, output_weight_delta);
+
+                    const IndexType bucket_row_offset =
+                        hidden_weight_offset + h * kInputDimensions;
+
+                    const IndexType bucket0_row_offset =
+                        h * kInputDimensions;
+
+                    for (IndexType i = 0; i < kInputDimensions; ++i) {
+                        const double hidden_weight_delta = std::abs(
+                            hidden_weights_[bucket_row_offset + i]
+                            - hidden_weights_[bucket0_row_offset + i]);
+
+                        hidden_weight_bucket_delta_sum += hidden_weight_delta;
+                        hidden_weight_bucket_delta_max =
+                            std::max(hidden_weight_bucket_delta_max, hidden_weight_delta);
+                    }
+                }
+
+                const double output_bias_delta = std::abs(
+                    output_biases_[bucket] - output_biases_[0]);
+
+                output_bias_bucket_delta_sum += output_bias_delta;
+                output_bias_bucket_delta_max =
+                    std::max(output_bias_bucket_delta_max, output_bias_delta);
+            }
+
+            const double compared_bucket_count =
+                static_cast<double>(kBucketCount > 1 ? kBucketCount - 1 : 0);
+
+            const double hidden_bias_bucket_delta_count =
+                compared_bucket_count * kHiddenDimensions;
+
+            const double hidden_weight_bucket_delta_count =
+                compared_bucket_count * kHiddenDimensions * kInputDimensions;
+
+            const double output_bias_bucket_delta_count =
+                compared_bucket_count;
+
+            const double output_weight_bucket_delta_count =
+                compared_bucket_count * kHiddenDimensions;
+
+            const double hidden_bias_bucket_delta_avg =
+                hidden_bias_bucket_delta_count == 0.0
+                    ? 0.0
+                    : hidden_bias_bucket_delta_sum / hidden_bias_bucket_delta_count;
+
+            const double hidden_weight_bucket_delta_avg =
+                hidden_weight_bucket_delta_count == 0.0
+                    ? 0.0
+                    : hidden_weight_bucket_delta_sum / hidden_weight_bucket_delta_count;
+
+            const double output_bias_bucket_delta_avg =
+                output_bias_bucket_delta_count == 0.0
+                    ? 0.0
+                    : output_bias_bucket_delta_sum / output_bias_bucket_delta_count;
+
+            const double output_weight_bucket_delta_avg =
+                output_weight_bucket_delta_count == 0.0
+                    ? 0.0
+                    : output_weight_bucket_delta_sum / output_weight_bucket_delta_count;
+
             auto out = sync_region_cout.new_region();
 
             out << "INFO (check_health):"
@@ -439,6 +536,16 @@ namespace Eval::NNUE {
             out << "  - avg_abs_bias_diff   = " << avg_bias_diff << std::endl;
             out << "  - avg_abs_weight      = " << abs_weight_sum / weight_count << std::endl;
             out << "  - avg_abs_weight_diff = " << avg_weight_diff << std::endl;
+
+            out << "  - bootstrap mode      = all buckets trained, bucket 0 used for forward output" << std::endl;
+            out << "  - bucket delta vs 0   = hidden_bias max " << hidden_bias_bucket_delta_max
+                << " avg " << hidden_bias_bucket_delta_avg << std::endl;
+            out << "  - bucket delta vs 0   = hidden_weight max " << hidden_weight_bucket_delta_max
+                << " avg " << hidden_weight_bucket_delta_avg << std::endl;
+            out << "  - bucket delta vs 0   = output_bias max " << output_bias_bucket_delta_max
+                << " avg " << output_bias_bucket_delta_avg << std::endl;
+            out << "  - bucket delta vs 0   = output_weight max " << output_weight_bucket_delta_max
+                << " avg " << output_weight_bucket_delta_avg << std::endl;
 
             out.unlock();
 
