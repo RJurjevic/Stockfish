@@ -20,6 +20,8 @@
 
 #include "evaluate_nnue.h"
 
+#include "nnue_bucket.h"
+
 #include "position.h"
 #include "misc.h"
 #include "uci.h"
@@ -224,7 +226,9 @@ namespace Eval::NNUE {
     ASSERT_ALIGNED(buffer, alignment);
 
     feature_transformer->Transform(pos, transformed_features);
-    const auto output = network->Propagate(transformed_features, buffer);
+
+    const IndexType bucket = get_nnue_bucket(pos);
+    const auto output = network->Propagate(transformed_features, buffer, bucket);
 
     return static_cast<Value>(output[0] / FV_SCALE);
   }

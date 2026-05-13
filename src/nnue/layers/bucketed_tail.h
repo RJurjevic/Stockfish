@@ -38,7 +38,8 @@ namespace Eval::NNUE::Layers {
   //     -> clipped ReLU
   //     -> bucketed affine HiddenDimensions -> 1
   //
-  // For the first scaffold version, bucket selection is fixed to bucket 0.
+  // Bucket selection is supplied by the caller for bucket-aware evaluation
+  // and by the trainer for selected-bucket learning.
   template <typename PreviousLayer, IndexType BucketCount, IndexType HiddenDimensions>
   class BucketedTail {
    public:
@@ -153,9 +154,19 @@ namespace Eval::NNUE::Layers {
       return !stream.fail();
     }
 
-    // Forward propagation
+    // Forward propagation using bucket 0.
+    // Kept for compatibility with the normal layer API.
     const OutputType* Propagate(
         const TransformedFeatureType* transformed_features, char* buffer) const {
+
+      return Propagate(transformed_features, buffer, 0);
+    }
+
+    // Forward propagation using an explicitly selected bucket.
+    const OutputType* Propagate(
+        const TransformedFeatureType* transformed_features,
+        char* buffer,
+        IndexType bucket) const {
 
       const auto input = previous_layer_.Propagate(
           transformed_features, buffer + kSelfBufferSize);
@@ -163,7 +174,7 @@ namespace Eval::NNUE::Layers {
       auto output = reinterpret_cast<OutputType*>(buffer);
       auto hidden = reinterpret_cast<std::uint8_t*>(buffer + kOutputBufferSize);
 
-      const IndexType bucket = GetBucketIndex(transformed_features);
+      assert(bucket < kBucketCount);
 
       const auto hidden_bias_base =
           bucket * kHiddenDimensions;
@@ -201,15 +212,6 @@ namespace Eval::NNUE::Layers {
 
     // Make the learning class a friend
     friend class Trainer<BucketedTail>;
-
-    // TODO:
-    // The current layer Propagate() API does not receive Position.
-    // This scaffold therefore always selects bucket 0.
-    // Real phase / piece-count bucketing needs a proper bucket source.
-    static IndexType GetBucketIndex(
-        const TransformedFeatureType* /*transformed_features*/) {
-      return 0;
-    }
 
     PreviousLayer previous_layer_;
 
