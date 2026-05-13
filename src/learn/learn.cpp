@@ -32,6 +32,7 @@
 
 #include "nnue/evaluate_nnue.h"
 #include "nnue/evaluate_nnue_learner.h"
+#include "nnue/nnue_bucket.h"
 
 #include "syzygy/tbprobe.h"
 
@@ -361,48 +362,6 @@ namespace Learner
         );
     }
 
-    static int get_candidate_nnue_bucket(const Position& pos)
-    {
-        const int wq = pos.count<QUEEN>(WHITE);
-        const int wr = pos.count<ROOK>(WHITE);
-        const int wb = pos.count<BISHOP>(WHITE);
-        const int wn = pos.count<KNIGHT>(WHITE);
-        const int wp = pos.count<PAWN>(WHITE);
-
-        const int bq = pos.count<QUEEN>(BLACK);
-        const int br = pos.count<ROOK>(BLACK);
-        const int bb = pos.count<BISHOP>(BLACK);
-        const int bn = pos.count<KNIGHT>(BLACK);
-        const int bp = pos.count<PAWN>(BLACK);
-
-        const int phase =
-            4 * (wq + bq)
-          + 2 * (wr + br)
-          +     (wb + bb)
-          +     (wn + bn);
-
-        const int white_material =
-            9 * wq + 5 * wr + 3 * (wb + wn) + wp;
-
-        const int black_material =
-            9 * bq + 5 * br + 3 * (bb + bn) + bp;
-
-        const int material_imbalance =
-            std::abs(white_material - black_material);
-
-        // Candidate rule only. Do not treat thresholds as final yet.
-        if (phase <= 10)
-            return 3; // endgame
-
-        if (material_imbalance >= 3)
-            return 2; // materially imbalanced non-endgame
-
-        if (phase >= 18)
-            return 0; // balanced high-material non-endgame
-
-        return 1;     // balanced reduced-material non-endgame
-    }
-
     static ValueWithGrad<double> get_loss_cross_entropy(
         Value shallow, Value teacher_signal, int result, int /* ply */)
     {
@@ -651,10 +610,10 @@ namespace Learner
             pvwalk_ply_sum = 0;
             pvwalk_ply_min = UINT32_MAX;
             pvwalk_ply_max = 0;
-            candidate_bucket0_count = 0;
-            candidate_bucket1_count = 0;
-            candidate_bucket2_count = 0;
-            candidate_bucket3_count = 0;
+            selected_bucket0_count = 0;
+            selected_bucket1_count = 0;
+            selected_bucket2_count = 0;
+            selected_bucket3_count = 0;
         }
 
         void learn(uint64_t epochs);
@@ -710,10 +669,10 @@ namespace Learner
         std::atomic<uint32_t> pvwalk_ply_min{UINT32_MAX};
         std::atomic<uint32_t> pvwalk_ply_max{0};
 
-        std::atomic<uint64_t> candidate_bucket0_count{0};
-        std::atomic<uint64_t> candidate_bucket1_count{0};
-        std::atomic<uint64_t> candidate_bucket2_count{0};
-        std::atomic<uint64_t> candidate_bucket3_count{0};
+        std::atomic<uint64_t> selected_bucket0_count{0};
+        std::atomic<uint64_t> selected_bucket1_count{0};
+        std::atomic<uint64_t> selected_bucket2_count{0};
+        std::atomic<uint64_t> selected_bucket3_count{0};
 
         uint64_t last_lr_drop;
         double best_loss;
@@ -942,22 +901,23 @@ namespace Learner
             PackedSfenValue ps2 = ps;
             ps2.score = sign * ps.score;
 
-            // Increment candidate bucket counters for observability only.
-            // This does not affect the actual bucket used by the NNUE trainer.
-            const int candidate_bucket = get_candidate_nnue_bucket(pos);
-            switch (candidate_bucket)
+            // Increment selected-bucket counters for progress reporting.
+            // Eval::NNUE::add_example() stores the same bucket rule on the
+            // training example used by the bucketed-tail trainer.
+            const int selected_bucket = Eval::NNUE::get_nnue_bucket(pos);
+            switch (selected_bucket)
             {
             case 0:
-                candidate_bucket0_count.fetch_add(1, std::memory_order_relaxed);
+                selected_bucket0_count.fetch_add(1, std::memory_order_relaxed);
                 break;
             case 1:
-                candidate_bucket1_count.fetch_add(1, std::memory_order_relaxed);
+                selected_bucket1_count.fetch_add(1, std::memory_order_relaxed);
                 break;
             case 2:
-                candidate_bucket2_count.fetch_add(1, std::memory_order_relaxed);
+                selected_bucket2_count.fetch_add(1, std::memory_order_relaxed);
                 break;
             case 3:
-                candidate_bucket3_count.fetch_add(1, std::memory_order_relaxed);
+                selected_bucket3_count.fetch_add(1, std::memory_order_relaxed);
                 break;
             }
 
@@ -1042,22 +1002,22 @@ namespace Learner
         out << "  - pvwalk max plies       = " << pvwalk_max_ply << endl;
 
         // Output bucket counts and types
-        const uint64_t cb0 = candidate_bucket0_count.load(std::memory_order_relaxed);
-        const uint64_t cb1 = candidate_bucket1_count.load(std::memory_order_relaxed);
-        const uint64_t cb2 = candidate_bucket2_count.load(std::memory_order_relaxed);
-        const uint64_t cb3 = candidate_bucket3_count.load(std::memory_order_relaxed);
+        const uint64_t cb0 = selected_bucket0_count.load(std::memory_order_relaxed);
+        const uint64_t cb1 = selected_bucket1_count.load(std::memory_order_relaxed);
+        const uint64_t cb2 = selected_bucket2_count.load(std::memory_order_relaxed);
+        const uint64_t cb3 = selected_bucket3_count.load(std::memory_order_relaxed);
         const uint64_t cb_total = cb0 + cb1 + cb2 + cb3;
         auto pct = [](uint64_t n, uint64_t total) {
             return total > 0 ? (n * 100.0 / total) : 0.0;
         };
-        out << "  - candidate bucket 0    = " << cb0
+        out << "  - selected bucket 0      = " << cb0
             << " (" << pct(cb0, cb_total) << "%) balanced high-material non-endgame" << endl;
-        out << "  - candidate bucket 1    = " << cb1
+        out << "  - selected bucket 1      = " << cb1
             << " (" << pct(cb1, cb_total) << "%) balanced reduced-material non-endgame" << endl;
-        out << "  - candidate bucket 2    = " << cb2
+        out << "  - selected bucket 2      = " << cb2
             << " (" << pct(cb2, cb_total) << "%) materially imbalanced non-endgame" << endl;
-        out << "  - candidate bucket 3    = " << cb3
-            << " (" << pct(cb3, cb_total) << "%) endgame" << endl;
+        out << "  - selected bucket 3      = " << cb3
+            << " (" << pct(cb3, cb_total) << "%) reduced-material / endgame-like" << endl;
 
         // For calculation of verification data loss
         Loss test_loss_sum{};

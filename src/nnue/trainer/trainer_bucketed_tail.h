@@ -151,10 +151,13 @@ namespace Eval::NNUE {
             combined_batch_input_ =
                 previous_layer_trainer_->step_start(thread_pool, batch_begin, batch_end);
 
-            // Forward-output scaffold:
-            // evaluation/training output still uses bucket 0 for now.
-            // Backpropagation bootstraps all bucket tails from every example.
-            std::fill(bucket_indices_.begin(), bucket_indices_.begin() + size, 0);
+            // Selected-bucket training:
+            // forward output and backpropagation use the bucket stored on each example.
+            for (IndexType b = 0; b < size; ++b) {
+                const IndexType bucket = (batch_begin + b)->bucket_index;
+                assert(bucket < kBucketCount);
+                bucket_indices_[b] = bucket;
+            }
 
             scale_thread_state(thread_states_[0], momentum_);
 
@@ -222,8 +225,16 @@ namespace Eval::NNUE {
 
             auto& thread_state = thread_states_[th.thread_idx()];
 
+            // Selected-bucket mode:
+            // Use the bucket selected for each training example.
+            // Forward propagation used the same bucket index in step_start(),
+            // and backpropagation updates only that bucket tail.
+            // The shared previous layer receives the gradient from the selected tail only.
             for (IndexType b = offset; b < offset + count; ++b) {
+                const IndexType bucket = bucket_indices_[b];
+
                 const IndexType input_offset = b * kInputDimensions;
+                const IndexType hidden_offset = b * kHiddenDimensions;
 
                 // Clear gradient to previous shared layer for this sample.
                 for (IndexType i = 0; i < kInputDimensions; ++i) {
@@ -233,93 +244,56 @@ namespace Eval::NNUE {
                 const LearnFloatType output_gradient =
                     gradients[b * kOutputDimensions];
 
-                // Bootstrap mode:
-                // Use every training example to update every bucket tail.
-                // The network output is still bucket 0 only, but all buckets receive
-                // the same training signal so they learn a common general tail before
-                // later bucket-specific specialization.
-                for (IndexType train_bucket = 0;
-                     train_bucket < kBucketCount;
-                     ++train_bucket) {
+                const IndexType hidden_bias_offset =
+                    bucket * kHiddenDimensions;
 
-                    const IndexType hidden_bias_offset =
-                        train_bucket * kHiddenDimensions;
+                const IndexType hidden_weight_bucket_offset =
+                    bucket * kHiddenDimensions * kInputDimensions;
 
-                    const IndexType hidden_weight_bucket_offset =
-                        train_bucket * kHiddenDimensions * kInputDimensions;
+                const IndexType output_weight_offset =
+                    bucket * kHiddenDimensions;
 
-                    const IndexType output_weight_offset =
-                        train_bucket * kHiddenDimensions;
+                thread_state.output_biases_diff_[bucket] += output_gradient;
 
-                    LearnFloatType tail_hidden_outputs[kHiddenDimensions];
-                    LearnFloatType tail_hidden_gradients[kHiddenDimensions];
+                // Gradient through selected bucket's output affine.
+                LearnFloatType hidden_gradients[kHiddenDimensions];
 
-                    // Recompute this bucket tail's hidden activations.
-                    for (IndexType h = 0; h < kHiddenDimensions; ++h) {
-                        LearnFloatType sum =
-                            hidden_biases_[hidden_bias_offset + h];
+                for (IndexType h = 0; h < kHiddenDimensions; ++h) {
+                    const LearnFloatType hidden_output =
+                        hidden_outputs_[hidden_offset + h];
 
-                        const IndexType weight_offset =
-                            hidden_weight_bucket_offset + h * kInputDimensions;
+                    thread_state.output_weights_diff_[output_weight_offset + h] +=
+                        output_gradient * hidden_output;
 
-                        for (IndexType i = 0; i < kInputDimensions; ++i) {
-                            sum += hidden_weights_[weight_offset + i]
-                                * combined_batch_input_[input_offset + i];
-                        }
-
-                        tail_hidden_outputs[h] =
-                            std::max(kZero, std::min(kOne, sum));
-                    }
-
-                    thread_state.output_biases_diff_[train_bucket] +=
-                        output_gradient;
-
-                    // Gradient through this bucket's output affine.
-                    for (IndexType h = 0; h < kHiddenDimensions; ++h) {
-                        const LearnFloatType hidden_output =
-                            tail_hidden_outputs[h];
-
-                        thread_state.output_weights_diff_[output_weight_offset + h] +=
-                            output_gradient * hidden_output;
-
-                        tail_hidden_gradients[h] =
-                            output_gradient * output_weights_[output_weight_offset + h];
-                    }
-
-                    // Gradient through this bucket's clipped ReLU and hidden affine.
-                    for (IndexType h = 0; h < kHiddenDimensions; ++h) {
-                        const LearnFloatType hidden_output =
-                            tail_hidden_outputs[h];
-
-                        const bool clipped =
-                            (hidden_output <= kZero) || (hidden_output >= kOne);
-
-                        const LearnFloatType hidden_gradient =
-                            clipped ? static_cast<LearnFloatType>(0.0)
-                                    : tail_hidden_gradients[h];
-
-                        thread_state.hidden_biases_diff_[hidden_bias_offset + h] +=
-                            hidden_gradient;
-
-                        const IndexType weight_offset =
-                            hidden_weight_bucket_offset + h * kInputDimensions;
-
-                        for (IndexType i = 0; i < kInputDimensions; ++i) {
-                            thread_state.hidden_weights_diff_[weight_offset + i] +=
-                                hidden_gradient * combined_batch_input_[input_offset + i];
-
-                            gradients_[input_offset + i] +=
-                                hidden_gradient * hidden_weights_[weight_offset + i];
-                        }
-                    }
+                    hidden_gradients[h] =
+                        output_gradient * output_weights_[output_weight_offset + h];
                 }
 
-                // We trained all bucket tails, but there is still only one shared
-                // previous layer. Average the combined tail gradients so the shared
-                // 512->32 path is not trained with a 4x larger gradient.
-                for (IndexType i = 0; i < kInputDimensions; ++i) {
-                    gradients_[input_offset + i] /=
-                        static_cast<LearnFloatType>(kBucketCount);
+                // Gradient through selected bucket's clipped ReLU and hidden affine.
+                for (IndexType h = 0; h < kHiddenDimensions; ++h) {
+                    const LearnFloatType hidden_output =
+                        hidden_outputs_[hidden_offset + h];
+
+                    const bool clipped =
+                        (hidden_output <= kZero) || (hidden_output >= kOne);
+
+                    const LearnFloatType hidden_gradient =
+                        clipped ? static_cast<LearnFloatType>(0.0)
+                                : hidden_gradients[h];
+
+                    thread_state.hidden_biases_diff_[hidden_bias_offset + h] +=
+                        hidden_gradient;
+
+                    const IndexType weight_offset =
+                        hidden_weight_bucket_offset + h * kInputDimensions;
+
+                    for (IndexType i = 0; i < kInputDimensions; ++i) {
+                        thread_state.hidden_weights_diff_[weight_offset + i] +=
+                            hidden_gradient * combined_batch_input_[input_offset + i];
+
+                        gradients_[input_offset + i] +=
+                            hidden_gradient * hidden_weights_[weight_offset + i];
+                    }
                 }
             }
 
@@ -537,7 +511,7 @@ namespace Eval::NNUE {
             out << "  - avg_abs_weight      = " << abs_weight_sum / weight_count << std::endl;
             out << "  - avg_abs_weight_diff = " << avg_weight_diff << std::endl;
 
-            out << "  - bootstrap mode      = all buckets trained, bucket 0 used for forward output" << std::endl;
+            out << "  - bucket mode         = selected bucket used for forward output and backprop" << std::endl;
             out << "  - bucket delta vs 0   = hidden_bias max " << hidden_bias_bucket_delta_max
                 << " avg " << hidden_bias_bucket_delta_avg << std::endl;
             out << "  - bucket delta vs 0   = hidden_weight max " << hidden_weight_bucket_delta_max
@@ -822,7 +796,7 @@ namespace Eval::NNUE {
         // Buffer for back propagation to shared previous layer
         std::vector<LearnFloatType, CacheLineAlignedAllocator<LearnFloatType>> gradients_;
 
-        // Scaffold bucket indices. Currently all zero.
+        // Selected bucket indices for the current mini-batch.
         std::vector<IndexType> bucket_indices_;
 
         // hyper parameter

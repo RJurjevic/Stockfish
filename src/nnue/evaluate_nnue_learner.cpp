@@ -19,6 +19,8 @@
 #include "thread_win32_osx.h"
 #include "thread.h"
 
+#include "nnue/nnue_bucket.h"
+
 // Code for learning NNUE evaluation function
 namespace Eval::NNUE {
 
@@ -144,6 +146,7 @@ namespace Eval::NNUE {
             example.sign = -1;
         }
 
+        example.bucket_index = get_nnue_bucket(pos);
         example.discrete_nn_eval = discrete_nn_eval;
         example.psv = psv;
         example.weight = weight;
