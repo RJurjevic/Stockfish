@@ -12,8 +12,9 @@ Stockfish NNUE itself is a port of a shogi neural network approach named NNUE, m
 
 Earlier Vafra nets used the flipped, not rotated, HalfKP 256x2-32-32-1 architecture. The trainer has also been extended for the experimental bucketed-tail architecture used for the next Vafra Cfish 15.0 development line:
 
-```text
+```
 flipped HalfKP 256x2-32-(32-1)x4
+```
 
 =======
 ## Building
