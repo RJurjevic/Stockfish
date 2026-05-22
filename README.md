@@ -16,7 +16,6 @@ Earlier Vafra nets used the flipped, not rotated, HalfKP 256x2-32-32-1 architect
 flipped HalfKP 256x2-32-(32-1)x4
 ```
 
-=======
 ## Building
 
 To compile:
