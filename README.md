@@ -6,7 +6,14 @@
 
 ## Overview
 
-This custom version of Nodchip's NNUE trainer has been adapted specifically for Vafra, a unique variant of Stockfish optimized with specialized training techniques and parameters. Stockfish NNUE itself is a port of a shogi neural network named NNUE (efficiently updatable neural network backwards) to Stockfish 11. To learn more about the Stockfish chess engine, look [here](stockfish.md) for an overview and [here](https://github.com/official-stockfish/Stockfish) for the official repository.
+This custom version of Nodchip's NNUE trainer has been adapted specifically for Vafra Stockfish and Vafra Cfish NNUE development. It is used by Robert Jurjevic to train evaluation networks from scratch, using Leela-derived standard-chess data and Vafra-specific training settings, filtering, schedules, and experimental architecture changes.
+
+Stockfish NNUE itself is a port of a shogi neural network approach named NNUE, meaning Efficiently Updatable Neural Network, to Stockfish 11. Nodchip's trainer made it possible to train HalfKP-style Stockfish NNUE networks, and this Vafra branch builds on that work for Robert's own experimental NNUE development.
+
+Earlier Vafra nets used the flipped, not rotated, HalfKP 256x2-32-32-1 architecture. The trainer has also been extended for the experimental bucketed-tail architecture used for the next Vafra Cfish 15.0 development line:
+
+```text
+flipped HalfKP 256x2-32-(32-1)x4
 
 =======
 ## Building
