@@ -1,4 +1,4 @@
-﻿#include <random>
+#include <random>
 #include <fstream>
 
 #include "evaluate_nnue.h"
@@ -10,6 +10,7 @@
 #include "trainer/trainer_input_slice.h"
 #include "trainer/trainer_affine_transform.h"
 #include "trainer/trainer_clipped_relu.h"
+#include "trainer/trainer_bucketed_tail.h"
 #include "trainer/trainer_sum.h"
 
 #include "position.h"
@@ -17,6 +18,8 @@
 #include "misc.h"
 #include "thread_win32_osx.h"
 #include "thread.h"
+
+#include "nnue/nnue_bucket.h"
 
 // Code for learning NNUE evaluation function
 namespace Eval::NNUE {
@@ -143,6 +146,7 @@ namespace Eval::NNUE {
             example.sign = -1;
         }
 
+        example.bucket_index = get_nnue_bucket(pos);
         example.discrete_nn_eval = discrete_nn_eval;
         example.psv = psv;
         example.weight = weight;

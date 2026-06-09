@@ -32,6 +32,7 @@
 
 #include "nnue/evaluate_nnue.h"
 #include "nnue/evaluate_nnue_learner.h"
+#include "nnue/nnue_bucket.h"
 
 #include "syzygy/tbprobe.h"
 
@@ -609,6 +610,10 @@ namespace Learner
             pvwalk_ply_sum = 0;
             pvwalk_ply_min = UINT32_MAX;
             pvwalk_ply_max = 0;
+            selected_bucket0_count = 0;
+            selected_bucket1_count = 0;
+            selected_bucket2_count = 0;
+            selected_bucket3_count = 0;
         }
 
         void learn(uint64_t epochs);
@@ -663,6 +668,11 @@ namespace Learner
         std::atomic<uint64_t> pvwalk_ply_sum{0};
         std::atomic<uint32_t> pvwalk_ply_min{UINT32_MAX};
         std::atomic<uint32_t> pvwalk_ply_max{0};
+
+        std::atomic<uint64_t> selected_bucket0_count{0};
+        std::atomic<uint64_t> selected_bucket1_count{0};
+        std::atomic<uint64_t> selected_bucket2_count{0};
+        std::atomic<uint64_t> selected_bucket3_count{0};
 
         uint64_t last_lr_drop;
         double best_loss;
@@ -891,6 +901,26 @@ namespace Learner
             PackedSfenValue ps2 = ps;
             ps2.score = sign * ps.score;
 
+            // Increment selected-bucket counters for progress reporting.
+            // Eval::NNUE::add_example() stores the same bucket rule on the
+            // training example used by the bucketed-tail trainer.
+            const int selected_bucket = Eval::NNUE::get_nnue_bucket(pos);
+            switch (selected_bucket)
+            {
+            case 0:
+                selected_bucket0_count.fetch_add(1, std::memory_order_relaxed);
+                break;
+            case 1:
+                selected_bucket1_count.fetch_add(1, std::memory_order_relaxed);
+                break;
+            case 2:
+                selected_bucket2_count.fetch_add(1, std::memory_order_relaxed);
+                break;
+            case 3:
+                selected_bucket3_count.fetch_add(1, std::memory_order_relaxed);
+                break;
+            }
+
             // Increment total counter
             total_count.fetch_add(1, std::memory_order_relaxed);
 
@@ -970,6 +1000,24 @@ namespace Learner
         out << "  - pvwalk avg plies       = " << pvwalk_avg_ply << endl;
         out << "  - pvwalk min plies       = " << pvwalk_min_ply << endl;
         out << "  - pvwalk max plies       = " << pvwalk_max_ply << endl;
+
+        // Output bucket counts and types
+        const uint64_t cb0 = selected_bucket0_count.load(std::memory_order_relaxed);
+        const uint64_t cb1 = selected_bucket1_count.load(std::memory_order_relaxed);
+        const uint64_t cb2 = selected_bucket2_count.load(std::memory_order_relaxed);
+        const uint64_t cb3 = selected_bucket3_count.load(std::memory_order_relaxed);
+        const uint64_t cb_total = cb0 + cb1 + cb2 + cb3;
+        auto pct = [](uint64_t n, uint64_t total) {
+            return total > 0 ? (n * 100.0 / total) : 0.0;
+        };
+        out << "  - selected bucket 0      = " << cb0
+            << " (" << pct(cb0, cb_total) << "%) balanced high-material non-endgame" << endl;
+        out << "  - selected bucket 1      = " << cb1
+            << " (" << pct(cb1, cb_total) << "%) balanced reduced-material non-endgame" << endl;
+        out << "  - selected bucket 2      = " << cb2
+            << " (" << pct(cb2, cb_total) << "%) materially imbalanced non-endgame" << endl;
+        out << "  - selected bucket 3      = " << cb3
+            << " (" << pct(cb3, cb_total) << "%) reduced-material / endgame-like" << endl;
 
         // For calculation of verification data loss
         Loss test_loss_sum{};

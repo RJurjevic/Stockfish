@@ -1,4 +1,4 @@
-﻿#ifndef _NNUE_TRAINER_H_
+#ifndef _NNUE_TRAINER_H_
 #define _NNUE_TRAINER_H_
 
 #include "nnue/nnue_common.h"
@@ -69,6 +69,7 @@ namespace Eval::NNUE {
         std::vector<TrainingFeature> training_features[2];
         Learner::PackedSfenValue psv;
         Value discrete_nn_eval;
+        IndexType bucket_index;
         int sign;
         double weight;
     };
