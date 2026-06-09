@@ -475,6 +475,9 @@ namespace Eval::NNUE {
                                 grad_norm += g * g;
                             }
 
+                            // Mark the diagnostic value as intentionally unused in normal builds.
+                            (void)grad_norm;
+
                             for (const auto& feature : batch_[b].training_features[c]) {
                                 const IndexType feature_index = feature.get_index();
                                 const IndexType weights_offset =
