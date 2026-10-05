@@ -544,6 +544,8 @@ namespace Learner
 
             double learning_rate = 1.0;
             double learning_rate_min = 0.0;
+            uint64_t lr_warmup_epochs = 0;
+            double lr_warmup_start = 0.0;
             double max_grad = 1.0;
 
             string validation_set_file_name;
@@ -594,8 +596,11 @@ namespace Learner
                 std::to_string(prng.next_random_seed()),
                 prm.sfen_read_size,
                 prm.thread_buffer_size),
+            warmup_peak_learning_rate(prm.learning_rate),
             learn_loss_sum{}
         {
+            if (params.lr_warmup_epochs > 0)
+                params.learning_rate = params.lr_warmup_start;
             save_count = 0;
             loss_output_count = 0;
             last_lr_drop = 0;
@@ -681,6 +686,10 @@ namespace Learner
 
         int trials;
 
+        // Configured peak learning rate, preserved while learning_rate
+        // is temporarily changed during warmup.
+        double warmup_peak_learning_rate;
+
         // For calculation of learning data loss
         Loss learn_loss_sum;
     };
@@ -739,16 +748,39 @@ namespace Learner
             return;
         }
 
-        if (params.newbob_decay != 1.0) {
+        if (params.newbob_decay != 1.0)
+        {
+            calc_loss(
+                sfen_for_mse,
+                0,
+                params.shallow_search_depth,
+                params.smart_fen_skipping,
+                params.assume_quiet,
+                params.use_pure_net_eval,
+                params.quiescence_threshold);
 
-            calc_loss(sfen_for_mse, 0, params.shallow_search_depth, params.smart_fen_skipping, params.assume_quiet, params.use_pure_net_eval, params.quiescence_threshold);
+            if (params.lr_warmup_epochs == 0)
+            {
+                // Legacy behaviour: epoch-0 validation establishes
+                // the initial NewBob baseline.
+                best_loss = latest_loss_sum / latest_loss_count;
+                latest_loss_sum = 0.0;
+                latest_loss_count = 0;
 
-            best_loss = latest_loss_sum / latest_loss_count;
-            latest_loss_sum = 0.0;
-            latest_loss_count = 0;
+                auto out = sync_region_cout.new_region();
+                out << "INFO (learn): initial loss = " << best_loss << endl;
+            }
+            else
+            {
+                // During warmup validation is informational only.
+                // The first eligible validation at/after warmup completion
+                // will establish the NewBob baseline.
+                latest_loss_sum = 0.0;
+                latest_loss_count = 0;
 
-            auto out = sync_region_cout.new_region();
-            out << "INFO (learn): initial loss = " << best_loss << endl;
+                auto out = sync_region_cout.new_region();
+                out << "INFO (learn): NewBob baseline deferred until LR warmup completes." << endl;
+            }
         }
 
         stop_flag = false;
@@ -932,6 +964,21 @@ namespace Learner
 
     void LearnerThink::update_weights(const PSVector& psv, uint64_t epoch)
     {
+        // Optional linear learning-rate warmup.
+        // lr_warmup_epochs == 0 preserves the legacy behaviour exactly.
+        if (params.lr_warmup_epochs > 0
+            && epoch <= params.lr_warmup_epochs)
+        {
+            const double warmup_fraction =
+                static_cast<double>(epoch)
+                / static_cast<double>(params.lr_warmup_epochs);
+
+            params.learning_rate =
+                params.lr_warmup_start
+                + (warmup_peak_learning_rate - params.lr_warmup_start)
+                * warmup_fraction;
+        }
+
         // I'm not sure this fencing is correct. But either way there
         // should be no real issues happening since
         // the read/write phases are isolated.
@@ -1062,8 +1109,15 @@ namespace Learner
 
         uint64_t psv_size = psv.size() - fen_skipping_count;
 
-        latest_loss_sum += test_loss_sum.value();
-        latest_loss_count += psv_size;
+        // Before warmup completion validation is informational only.
+        // At the final warmup epoch (or the first validation afterwards),
+        // validation starts contributing to NewBob again.
+        if (params.lr_warmup_epochs == 0
+            || epoch >= params.lr_warmup_epochs)
+        {
+            latest_loss_sum += test_loss_sum.value();
+            latest_loss_count += psv_size;
+        }
 
         if (psv_size && test_loss_sum.count() > 0)
         {
@@ -1428,6 +1482,8 @@ namespace Learner
             // learning rate
             else if (option == "lr") is >> params.learning_rate;
             else if (option == "lr_min") is >> params.learning_rate_min;
+            else if (option == "lr_warmup_epochs") is >> params.lr_warmup_epochs;
+            else if (option == "lr_warmup_start") is >> params.lr_warmup_start;
             else if (option == "max_grad") is >> params.max_grad;
 
             // Accept also the old option name.
@@ -1514,6 +1570,14 @@ namespace Learner
             }
         }
 
+        if (params.lr_warmup_epochs > 0
+            && (params.lr_warmup_start < 0.0
+                || params.lr_warmup_start > params.learning_rate))
+        {
+            out << "ERROR: lr_warmup_start must be between 0 and lr." << endl;
+            return;
+        }
+
         params.nn_batch_size_precise = static_cast<double>(params.nn_batch_size);
 
         out << "INFO: Executing learn command\n";
@@ -1556,11 +1620,24 @@ namespace Learner
         out << "  - nn batch size min        : " << params.nn_batch_size_min << endl;
         out << "  - nn batch size variable   : " << (params.nn_batch_size_variable ? "true" : "false") << endl;
 
-        out << "  - nn validation size       : " << params.nn_mse_size << endl;
+        if (params.validation_set_file_name.empty())
+        {
+            out << "  - validation mode          : training-data sample" << endl;
+            out << "  - nn validation size       : " << params.nn_mse_size << endl;
+        }
+        else
+        {
+            out << "  - validation mode          : entire validation file" << endl;
+        }
         out << "  - nn options               : " << nn_options << endl;
 
         out << "  - learning rate            : " << params.learning_rate << endl;
         out << "  - learning rate min        : " << params.learning_rate_min << endl;
+        if (params.lr_warmup_epochs > 0)
+        {
+            out << "  - lr warmup epochs         : " << params.lr_warmup_epochs << endl;
+            out << "  - lr warmup start          : " << params.lr_warmup_start << endl;
+        }
         out << "  - max grad                 : " << params.max_grad << endl;
         out << "  - use draws in training    : " << params.use_draw_games_in_training << endl;
         out << "  - use draws in validation  : " << params.use_draw_games_in_validation << endl;
@@ -1599,7 +1676,11 @@ namespace Learner
             out << "  - learning rate scheduling : every " << params.auto_lr_drop << " sfens" << endl;
         }
         else if (params.newbob_decay != 1.0) {
-            out << "  - learning rate scheduling : newbob with decay" << endl;
+            out << "  - learning rate scheduling : "
+                << (params.lr_warmup_epochs > 0
+                    ? "linear warmup then newbob with decay"
+                    : "newbob with decay")
+                << endl;
             out << "  - newbob decay             : " << params.newbob_decay << endl;
             out << "  - decay step               : " << params.decay_step << endl;
             out << "  - newbob num trials        : " << params.newbob_num_trials << endl;
