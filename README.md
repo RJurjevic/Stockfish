@@ -10,7 +10,7 @@ This custom version of Nodchip's NNUE trainer has been adapted specifically for 
 
 Stockfish NNUE itself is a port to Stockfish of a shogi neural-network approach named NNUE, meaning Efficiently Updatable Neural Network. Nodchip's trainer made it possible to train HalfKP-style Stockfish NNUE networks, and this Vafra version builds on that work for Robert's own experimental NNUE development.
 
-Earlier Vafra nets used the flipped, not rotated, HalfKP 256x2-32-32-1 architecture. The current Vafra Cfish 15.0 development line now uses the adopted bucketed-tail architecture:
+Earlier Vafra nets used the flipped, not rotated, HalfKP 256x2-32-32-1 architecture. The current Vafra Cfish 15.x development line now uses the adopted bucketed-tail architecture:
 
 ```text
 flipped HalfKP 256x2-32-(32-1)x4
@@ -149,3 +149,13 @@ There is a builting converted that support all 3 formats described above. Any of
 - [Unofficial Stockfish Discord](https://discord.gg/nv8gDtt)
 
 A more updated list can be found in the #sf-nnue-resources channel in the Discord.
+
+---
+
+<p align="center">
+  <img src="vafra-logo0.jpg" alt="Vafra NNUE" width="900">
+</p>
+
+<p align="center">
+  <em>Vafra NNUE — experimental neural-network training for Vafra Cfish.</em>
+</p>
